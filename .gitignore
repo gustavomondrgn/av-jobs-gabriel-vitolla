@@ -1,0 +1,7 @@
+.env
+seen_ids.json
+__pycache__/
+*.pyc
+.venv/
+bot.log
+ONM-BOT-NOTIFIER-CONTEXT.md

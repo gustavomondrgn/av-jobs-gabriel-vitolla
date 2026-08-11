@@ -1,0 +1,16 @@
+services:
+  onm-jobs-bot:
+    build: .
+    container_name: onm-jobs-bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - bot-data:/app/data
+      # profile.md vai pela imagem (COPY no Dockerfile). Pra editar em produção:
+      # commit + push → Coolify rebuilda. Pra editar local rapidão, rode
+      # `python main.py` direto (sem Docker) — o mtime cache pega a edição
+      # na próxima checagem.
+
+volumes:
+  bot-data:
