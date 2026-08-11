@@ -176,16 +176,44 @@ COMANDOS_MENU = [
 ]
 
 
-def registrar_menu(token: str) -> bool:
-    """Publica a lista de comandos no Telegram. Idempotente."""
-    resp = _post(token, "setMyCommands", {
-        "commands": [{"command": c, "description": d} for c, d in COMANDOS_MENU],
-    })
-    if resp and resp.get("ok"):
-        log.info("Menu de comandos registrado no Telegram (%d comandos)", len(COMANDOS_MENU))
-        return True
-    log.warning("Não consegui registrar o menu de comandos: %s", str(resp)[:200])
-    return False
+def registrar_menu(token: str, admin_ids: set[int]) -> bool:
+    """Publica a lista de comandos **só para os admins**.
+
+    Qualquer pessoa consegue abrir conversa com um bot do Telegram — isso é da
+    plataforma e não tem como impedir. O que dá para evitar é que ela **veja** um
+    menu de administração ao abrir: o menu é registrado por escopo, um por chat
+    de admin, e o escopo padrão fica vazio. Quem não é admin abre o bot e não vê
+    comando nenhum.
+
+    Isso é cosmético, não é a segurança: quem manda comando sem estar em
+    TELEGRAM_ADMIN_IDS é ignorado de qualquer jeito. Mas evita a impressão de
+    painel exposto e o convite a ficar cutucando.
+    """
+    lista = [{"command": c, "description": d} for c, d in COMANDOS_MENU]
+
+    # 1) Escopo padrão: nada. Se ainda não há admin, deixa só o /id para o
+    #    cadastro do primeiro conseguir descobrir o próprio ID.
+    if admin_ids:
+        padrao: list[dict] = []
+    else:
+        padrao = [{"command": "id", "description": "Mostra seu ID do Telegram"}]
+    _post(token, "setMyCommands", {"commands": padrao, "scope": {"type": "default"}})
+
+    # 2) Menu completo, um escopo por conversa de admin.
+    ok = True
+    for uid in sorted(admin_ids):
+        resp = _post(token, "setMyCommands", {
+            "commands": lista,
+            "scope": {"type": "chat", "chat_id": uid},
+        })
+        if not (resp and resp.get("ok")):
+            ok = False
+            log.warning("Não consegui registrar o menu para o admin %s: %s", uid, str(resp)[:150])
+
+    if ok:
+        log.info("Menu de comandos registrado para %d admin(s); escondido dos demais",
+                 len(admin_ids))
+    return ok
 
 
 def parse_admin_ids(bruto: str) -> set[int]:
@@ -246,7 +274,7 @@ class CommandListener:
             log.info("Comandos anteriores ao boot descartados (offset=%d)", ultimo + 1)
 
     def _run(self) -> None:
-        registrar_menu(self.token)
+        registrar_menu(self.token, self.admin_ids)
         if self.state.offset == 0:
             self._descartar_backlog()
 

@@ -130,6 +130,30 @@ Só os user IDs em `TELEGRAM_ADMIN_IDS` podem executar. **Sem essa variável os
 comandos ficam desligados** — do contrário qualquer pessoa que achasse o bot
 poderia pausar as fontes.
 
+### Quem enxerga os comandos
+
+Qualquer pessoa consegue abrir conversa com um bot do Telegram: basta clicar no
+perfil dele no grupo. Isso é da plataforma e não tem como impedir.
+
+O que o bot faz é não **mostrar** nada a quem não é admin. O menu de comandos é
+registrado por escopo — um por conversa de admin, com o escopo padrão vazio.
+Quem não está em `TELEGRAM_ADMIN_IDS` abre o bot e não vê comando nenhum; se
+digitar um mesmo assim, é ignorado em silêncio.
+
+| Quem abre o bot | Comandos visíveis |
+| --- | --- |
+| Admin | todos |
+| Qualquer outra pessoa | nenhum |
+| Dentro do grupo | nenhum |
+
+Vale a distinção: esconder o menu é cosmético. A segurança é a checagem de
+`TELEGRAM_ADMIN_IDS`, que roda em todo comando independentemente do que a pessoa
+vê. Esconder só evita a impressão de painel exposto e o convite a cutucar.
+
+> Vale também desligar no BotFather, com `/setjoingroups`, a permissão do bot ser
+> adicionado a grupos. Ele já está no grupo do Gabriel e não precisa entrar em
+> mais nenhum.
+
 **Como descobrir seu user ID:** mande qualquer mensagem no privado do bot e
 procure no log a linha `Comando ... recusado: user_id=NNNN`. Esse número é o seu.
 
