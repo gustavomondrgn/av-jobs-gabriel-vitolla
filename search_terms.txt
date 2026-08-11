@@ -1,0 +1,45 @@
+# Termos de busca das fontes que exigem uma palavra-chave (Gupy, Indeed, LinkedIn).
+#
+# Um termo por linha. Linha começando com "#" é comentário e é ignorada.
+# Cada termo vira uma consulta na plataforma, então mais termos = mais vagas
+# e mais tempo por ciclo. Editar aqui não exige mexer em código.
+#
+# O ONM não usa esta lista: lá o bot lê todas as vagas mais recentes e deixa a
+# seleção inteira por conta do profile.md.
+
+# --- Secretariado e assistência (prioridade máxima) ---
+assistente virtual
+assistente administrativo
+assistente executivo
+assistente pessoal
+secretaria remota
+
+# --- Atendimento ---
+atendimento ao cliente
+suporte ao cliente
+atendente
+
+# --- Comercial e vendas ---
+assistente comercial
+sdr
+bdr
+closer
+assistente de vendas
+inside sales
+
+# --- Administrativo ---
+auxiliar administrativo
+backoffice
+
+# --- Financeiro ---
+assistente financeiro
+auxiliar financeiro
+contas a pagar
+
+# --- Agenda e clínicas ---
+assistente de agendamento
+secretaria de consultorio
+
+# --- Customer success ---
+customer success
+pos-venda

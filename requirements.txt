@@ -1,3 +1,9 @@
 requests>=2.31.0
 python-dotenv>=1.0.0
 google-genai>=0.3.0
+# Indeed e LinkedIn. Puxa pandas junto, então engorda a imagem — é o preço de
+# não manter scraper próprio: quando o Indeed muda, é `pip install -U`.
+python-jobspy>=1.1.80
+# Base de fusos horários: a imagem slim não traz, e sem ela o zoneinfo não
+# resolve "America/Sao_Paulo" e o relatório sairia no horário errado.
+tzdata>=2024.1

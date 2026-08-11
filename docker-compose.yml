@@ -1,16 +1,45 @@
 services:
-  onm-jobs-bot:
+  av-jobs-bot:
     build: .
-    container_name: onm-jobs-bot
+    container_name: av-jobs-bot
     restart: unless-stopped
-    env_file:
-      - .env
+    # NÃO usar `env_file: .env` — o .env está no .gitignore, então ele não existe
+    # no repositório que o Coolify clona e o compose quebra antes de subir.
+    # Com substituição de variáveis funciona nos dois casos: local o compose lê
+    # o .env da pasta automaticamente, e em produção o Coolify injeta as vars.
+    environment:
+      - ONM_EMAIL=${ONM_EMAIL}
+      - ONM_PASSWORD=${ONM_PASSWORD}
+      - TELEGRAM_TOKEN=${TELEGRAM_TOKEN}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-3.1-flash-lite}
+      - CHECK_INTERVAL=${CHECK_INTERVAL:-600}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - PROFILE_FILE=${PROFILE_FILE:-profile.md}
+      - TERMS_FILE=${TERMS_FILE:-search_terms.txt}
+      - LINKEDIN_TERMS_FILE=${LINKEDIN_TERMS_FILE:-search_terms_linkedin.txt}
+      - SOURCES=${SOURCES:-onm,gupy,indeed,linkedin}
+      # Ritmo de cada fonte. Gupy e Indeed fazem 1 requisição por termo de
+      # busca; o LinkedIn faz 2 por vaga (busca + descrição), por isso é o mais
+      # espaçado.
+      - INTERVAL_ONM=${INTERVAL_ONM:-600}
+      - INTERVAL_GUPY=${INTERVAL_GUPY:-3600}
+      - INTERVAL_INDEED=${INTERVAL_INDEED:-3600}
+      - INTERVAL_LINKEDIN=${INTERVAL_LINKEDIN:-7200}
+      # Comandos no privado do bot (vazio = desligados) e relatório diário.
+      - TELEGRAM_ADMIN_IDS=${TELEGRAM_ADMIN_IDS:-}
+      - TIMEZONE=${TIMEZONE:-America/Sao_Paulo}
+      - REPORT_HOUR=${REPORT_HOUR:-22}
+      - REPORT_TO=${REPORT_TO:-grupo}
+      # DATA_DIR fica fixo no volume — não sobrescrever pelo painel.
+      - DATA_DIR=/app/data
     volumes:
+      # seen_ids.json, skipped_jobs.jsonl e quota_log.jsonl sobrevivem a redeploy.
       - bot-data:/app/data
-      # profile.md vai pela imagem (COPY no Dockerfile). Pra editar em produção:
-      # commit + push → Coolify rebuilda. Pra editar local rapidão, rode
-      # `python main.py` direto (sem Docker) — o mtime cache pega a edição
-      # na próxima checagem.
+      # profile.md vai pela imagem (COPY no Dockerfile). Pra ajustar o filtro em
+      # produção: edita, commita, pusha → Coolify rebuilda. Local, rode
+      # `python main.py` direto — o cache por mtime pega a edição na hora.
 
 volumes:
   bot-data:

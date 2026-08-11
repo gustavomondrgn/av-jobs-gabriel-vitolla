@@ -1,0 +1,16 @@
+# Termos de busca APENAS do LinkedIn.
+#
+# Lista curta de propósito. No LinkedIn cada vaga custa DUAS requisições: uma na
+# busca e outra para pegar a descrição (a busca não devolve a descrição). Com os
+# 23 termos do search_terms.txt isso passaria de 200 requisições por ciclo.
+#
+# Aqui ficam só os termos de maior rendimento. Um termo por linha, "#" comenta.
+# Antes de acrescentar: cada termo é +1 requisição de busca por ciclo, mais as
+# descrições das vagas que ele trouxer.
+
+assistente virtual
+assistente executivo
+assistente administrativo
+sdr
+customer success
+assistente financeiro

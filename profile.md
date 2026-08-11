@@ -1,81 +1,130 @@
-# Perfil do Filtro — Kandle Studio
+# Perfil do Filtro — AV Jobs · Gabriel Vitolla
 
 > Este arquivo é lido pelo bot e injetado no prompt do classificador.
 > Edite livremente em português. Quanto mais concreto e com exemplos, melhor.
 > Não precisa de formato — texto corrido funciona. Salvar o arquivo já basta;
-> não precisa rebuildar nada.
+> não precisa rebuildar nada (rodando local).
 
-## Sobre nós
+## Para quem é o filtro
 
-Somos o Kandle Studio. Trabalhamos com **desenvolvimento de software em geral**.
-Pegamos projetos que envolvem programar, configurar, integrar ou manter qualquer
-coisa digital. Não somos designers puros, não somos redatores, não somos
-videomakers, não somos contadores etc.
+O público são **Assistentes Virtuais** — alunos do curso de AV / secretariado
+remoto do Gabriel Vitolla. Na prática essa galera não faz só assistência
+virtual: acumula papéis de atendimento, administrativo, financeiro e vendas.
+Por isso o filtro é amplo dentro desse leque.
 
-## O que NOS interessa (RELEVANTE)
+**A prioridade é sempre assistência virtual.** As outras categorias entram
+porque vaga específica de "assistente virtual" é rara demais para sustentar o
+volume do grupo sozinha.
 
-Qualquer coisa relacionada a:
+## ⚠️ REGRA OBRIGATÓRIA — trabalho remoto
 
-- **Aplicativos / Apps** — mobile (iOS, Android), híbridos, PWA, app de delivery,
-  app de gestão, app interno, "preciso de um aplicativo pra…", etc.
-- **Manutenção / evolução de sistemas existentes** — "tenho um sistema e preciso
-  ajustar", "bug no meu site", "adicionar funcionalidade", "migrar versão",
-  "atualizar plugin", refatoração, dar continuidade em projeto começado por
-  outro dev, etc.
-- **Landing pages / páginas de vendas** — em qualquer grafia: landing page,
-  lendingpage, LP, LP de captura, LP de vendas, página de vendas, pagina de
-  vendas (sem acento), página de captura, hotsite, one-page, squeeze page, etc.
-- **Sites em geral** — institucional, blog, portfólio, e-commerce, loja virtual,
-  marketplace, portal, sistema web, dashboard, painel administrativo, área de
-  membros, área do cliente, etc.
-- **Automações** — n8n, Make (Integromat), Zapier, Pipedream, scripts de
-  automação, RPA, integrações entre sistemas, webhooks, automatizar planilha,
-  automatizar processo, bot, robô, agente, scraping, raspagem, crawling,
-  consumir API, integrar X com Y, etc.
-- **Ferramentas / Stack de desenvolvimento** — qualquer tecnologia de
-  programação ou ferramenta usada por dev: WordPress, Shopify, Wix (custom
-  code), Webflow, Bubble, Framer, Next.js, React, Vue, Angular, Svelte, Node,
-  Python, PHP, Laravel, Django, Flask, FastAPI, Rails, Go, Rust, Java, .NET,
-  Flutter, React Native, Expo, Supabase, Firebase, AWS, GCP, Azure, Vercel,
-  Netlify, Docker, Kubernetes, Postgres, MySQL, MongoDB, Redis, Elasticsearch,
-  Tailwind, etc. **Se citarem qualquer tecnologia/ferramenta de dev, é
-  relevante.**
-- **IA / LLMs / Agentes** — chatbot, assistente virtual, integração com
-  ChatGPT/Claude/Gemini, RAG, fine-tuning, embedding, agente de IA, automação
-  com IA, etc.
-- **Integrações de pagamento, ERP, CRM, e-commerce** — Stripe, Mercado Pago,
-  Pagar.me, Asaas, integração com Bling, Tiny, Omie, ContaAzul, RD Station,
-  HubSpot, Salesforce, Pipedrive, etc.
-- **APIs / Backend** — criar API, consumir API, microserviços, sistema
-  distribuído, fila, cache, pubsub, etc.
-- **Branding / Logo / Identidade visual** — criação de logo, identidade
-  visual, criar marca, branding, manual de marca, logotipo, logomarca.
-  **Exceção** à regra geral de "não fazemos design": essas categorias
-  específicas a gente pega.
+A vaga precisa ser **100% remota, home office ou permitir trabalho remoto**.
+
+- Vaga **presencial** → `irrelevant`, não importa o quanto a função encaixe.
+- Vaga **híbrida** → `irrelevant` também.
+- Sinais de presencial: exige comparecer ao escritório, exige morar em cidade
+  ou região específica, "presencial", "híbrido", "modelo híbrido", "X dias no
+  escritório", endereço da empresa como local de trabalho, "atendimento no
+  balcão", "recepção da clínica" (presencial).
+- Se a vaga **não disser nada sobre modalidade**, não descarte por isso —
+  avalie só pela função. Nesse caso, no máximo `borderline`.
+
+PJ, freelancer, prestador de serviço, part-time e por demanda são modalidades
+bem-vindas — mas **não** são obrigatórias. CLT remoto também serve.
+
+## O que INTERESSA (RELEVANTE)
+
+Todas as categorias abaixo, **desde que remotas**:
+
+### 1. Secretariado e Assistência (prioridade máxima)
+
+Assistente Virtual · Assistente Remoto · Secretária Remota · Secretária
+Virtual · Assistente Administrativo · Assistente Executivo · Assistente
+Pessoal.
+
+### 2. Atendimento
+
+Atendente Remoto · Assistente de Atendimento · Atendimento ao Cliente ·
+Suporte ao Cliente · Atendimento via WhatsApp · Recepcionista Remota.
+
+### 3. Comercial e Vendas
+
+Assistente Comercial · Atendente Comercial · SDR · BDR · Closer · Inside
+Sales · Assistente de Vendas.
+
+### 4. Administrativo
+
+Assistente Administrativo · Auxiliar Administrativo · Analista Administrativo ·
+Backoffice · Assistente de Cadastro · Assistente de Processos.
+
+### 5. Financeiro
+
+Assistente Financeiro · Auxiliar Financeiro · Assistente Administrativo
+Financeiro · Contas a Pagar · Contas a Receber · Assistente de Cobrança ·
+Assistente de Faturamento.
+
+### 6. Agenda e Clínicas
+
+Secretária de Consultório · Assistente de Consultório · Assistente de
+Agendamento · Atendimento de Clínica · Appointment Setter.
+
+> Atenção: nesta categoria é comum a vaga ser presencial. Só entra se for
+> remota (secretária de consultório trabalhando de casa, agendamento online).
+
+### 7. Customer Success
+
+Customer Success · Assistente de Customer Success · Assistente de Pós-venda ·
+Assistente de Relacionamento · Customer Support.
+
+## Variações de escrita
+
+As descrições têm grafia inconsistente, abreviação e erro de digitação. Trate
+como equivalentes:
+
+- "assistente virtual" = "AV" = "assistente vitual" = "virtual assistant"
+- "secretária remota" = "secretaria remota" (sem acento) = "secretariado
+  remoto" = "secretária online"
+- "SDR" = "S.D.R." = "pré-vendas" = "prospecção ativa" = "hunter"
+- "closer" = "vendedor closer" = "fechamento de vendas"
+- "backoffice" = "back office" = "back-office" = "retaguarda"
+- "customer success" = "CS" = "sucesso do cliente"
+- "home office" = "homeoffice" = "home-office" = "remoto" = "à distância" =
+  "trabalho a distancia" (sem acento)
+- "appointment setter" = "agendador" = "agendamento de reuniões"
+
+Considere sempre o **título, a profissão/área, as skills E a descrição**. Às
+vezes a descrição é vaga mas a categoria denuncia que é da área.
 
 ## O que NÃO interessa (IRRELEVANTE)
 
-- Design gráfico em geral SEM ser logo/branding (social media, peças pra
-  Instagram, flyer, banner, cartaz, edição de vídeo, ilustração, motion sem
-  código, capa de YouTube, thumbnail, etc.). **Atenção:** logo, identidade
-  visual e branding ESTÃO na lista de relevantes acima — é exceção.
-- Redação / copywriting puro (artigo, post, roteiro, ebook ghostwriter).
-- Tradução, transcrição, revisão de texto.
-- Tarefas presenciais (entrega física, fotografia, evento).
-- Trabalhos administrativos não-técnicos (digitação, secretariado virtual sem
-  automação, atendimento humano).
-- Áreas totalmente fora de TI (engenharia civil, advocacia, medicina,
-  contabilidade tradicional, arquitetura — exceto quando precisarem de
-  software/site/automação).
-- Marketing / tráfego pago / SEO puro (sem implementação técnica).
-- Aulas particulares, consultoria sem entregável de código.
+- **Qualquer vaga presencial ou híbrida** — mesmo que a função seja perfeita.
+- **Vagas técnicas especializadas**: desenvolvimento de software, programação,
+  DevOps, análise de dados, design gráfico, edição de vídeo, motion,
+  ilustração, arquitetura, engenharia.
+- **Profissões regulamentadas / de formação específica**: advocacia, medicina,
+  enfermagem, contabilidade (contador registrado), psicologia, nutrição,
+  fisioterapia. Atenção: a *secretária* de um escritório de advocacia ou de uma
+  clínica **interessa** (se remota) — quem não interessa é o advogado, o
+  médico etc.
+- **Gestão de tráfego pago, SEO, copywriting, social media** como função
+  principal da vaga.
+- Aulas particulares, consultoria especializada, mentoria.
+- Vagas operacionais que exigem presença física por natureza: motorista,
+  estoquista, produção, obra, entrega, evento, fotografia.
+- Cargos de gestão sênior que não são função de apoio (gerente, diretor, head,
+  coordenador com equipe grande).
 
 ## Em caso de dúvida
 
-Se você não tiver certeza se uma coisa é relevante (descrição vaga, ambígua,
-pode encaixar ou não), **classifique como BORDERLINE**. É melhor mandar uma
-notificação a mais e eu descartar do que perder uma oportunidade.
+Se não tiver certeza (descrição vaga, ambígua, pode encaixar ou não),
+**classifique como BORDERLINE**. É melhor mandar uma notificação a mais e o
+grupo descartar do que perder uma oportunidade.
 
-Se a descrição for muito curta ou genérica ("preciso de um sistema", "tenho
-uma ideia") mas o título / categoria sugerirem que é da nossa área,
-**BORDERLINE** também.
+Casos típicos de BORDERLINE:
+
+- Função de apoio administrativo/atendimento que não está literalmente na lista
+  acima, mas é claramente do mesmo leque.
+- Descrição curta ou genérica ("procuro alguém para me ajudar com as tarefas",
+  "preciso de alguém para organizar minha agenda") em que o título ou a
+  categoria sugerem apoio remoto.
+- Vaga que encaixa na função mas não deixa claro se é remota.

@@ -4,4 +4,11 @@ __pycache__/
 *.pyc
 .venv/
 bot.log
+quota_log.jsonl
+skipped_jobs.jsonl
 ONM-BOT-NOTIFIER-CONTEXT.md
+CONTEXTO-INICIAL.md
+ESTADO-ATUAL.md
+PROMPT-PROXIMO-CHAT.md
+BACKLOG.md
+*Anotações do Gemini.md
