@@ -281,6 +281,28 @@ O `seen_ids.json` é persistido no volume `bot-data`, sobrevivendo a restarts.
 > apontando para o volume. Sobrescrever faz o bot perder o `seen_ids.json` a cada
 > redeploy e reenviar todas as vagas para o grupo.
 
+### Acesso ao repositório e deploy automático
+
+São duas coisas separadas, e é fácil confundir:
+
+- **Deploy key** (GitHub → Settings → Deploy keys): permite ao Coolify **ler** o
+  repositório na hora de clonar. Read-only basta.
+- **Webhook** (GitHub → Settings → Webhooks): faz o GitHub **avisar** o Coolify
+  que houve push, disparando o redeploy. Sem ele, todo deploy é manual.
+
+O webhook aponta para `/webhooks/source/github/events/manual` na URL do Coolify,
+com content type `application/json` e o segredo que o Coolify gera por
+aplicação. Só o evento de *push* é necessário.
+
+### O que sobrevive a um redeploy
+
+O `seen_ids.json`, o `bot_state.json` (fontes pausadas e dia do último
+relatório), o `skipped_jobs.jsonl` e o `quota_log.jsonl` — todos ficam no volume
+`bot-data`, fora da imagem.
+
+Já o `profile.md` e os arquivos de termos são **embutidos na imagem**. Ajustar o
+filtro em produção é editar, commitar e pushar; o redeploy pega a nova versão.
+
 ## Stack
 
 - Python 3.12 (a mesma da imagem Docker — use 3.12 local também)
