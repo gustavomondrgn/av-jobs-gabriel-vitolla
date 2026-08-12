@@ -11,7 +11,7 @@ de ambiente: bastava um erro de configuração, um redeploy sem a variável, ou 
 vazamento de um ID, para um aluno conseguir desligar as vagas do grupo. Não vale
 o risco para uma comodidade que agora tem lugar melhor.
 
-O controle do bot passou a ser o painel em `admin.gabrielvitolla.com.br`, atrás
+O controle do bot passou a ser o painel em `admin.encontreseuav.com.br`, atrás
 de login e senha. Aqui sobrou o que é seguro por construção: **texto**. O bot
 responde a quem abrir a conversa dizendo o que ele é e para onde ir, e ignora
 todo o resto. Não existe mensagem, de ninguém, que mude o comportamento do bot.
@@ -59,7 +59,7 @@ def responder(token: str, chat_id: int, texto: str) -> None:
     })
 
 
-def limpar_menu(token: str) -> None:
+def limpar_menu(token: str, chats_legados: set[int] | None = None) -> None:
     """Apaga a lista de comandos em todos os escopos.
 
     O Telegram guarda os comandos registrados no servidor dele: se o bot já
@@ -67,12 +67,25 @@ def limpar_menu(token: str) -> None:
     mesmo depois de o código parar de tratá-lo. O usuário veria comandos que não
     existem mais e concluiria que o bot está quebrado. Limpar é obrigatório, não
     é cosmético.
+
+    **Os escopos por chat também precisam ser apagados, um a um.** A versão
+    anterior registrava o menu de administração com escopo
+    `{"type": "chat", "chat_id": <admin>}`, e apagar os escopos genéricos não
+    toca nesses. Foi o que aconteceu no deploy de 12/08: os chats privados já
+    mostravam só `/start` e `/suporte`, mas os dois admins continuavam vendo o
+    menu antigo inteiro. Quem eram esses chats só o histórico sabe — daí a
+    lista vir do ambiente.
     """
     for escopo in ({"type": "default"},
                    {"type": "all_private_chats"},
                    {"type": "all_group_chats"},
                    {"type": "all_chat_administrators"}):
         _post(token, "deleteMyCommands", {"scope": escopo})
+
+    for chat_id in sorted(chats_legados or ()):
+        _post(token, "deleteMyCommands",
+              {"scope": {"type": "chat", "chat_id": chat_id}})
+        log.info("Menu antigo removido do chat %s", chat_id)
     # Republica só o que sobrou, para o botão "Menu" não ficar vazio e estranho.
     _post(token, "setMyCommands", {
         "commands": [
@@ -94,11 +107,14 @@ class CommandListener:
     """
 
     def __init__(self, token: str, site_url: str = "", instagram_url: str = "",
-                 suporte_telegram: str = "") -> None:
+                 suporte_telegram: str = "",
+                 chats_legados: set[int] | None = None) -> None:
         self.token = token
         self.site_url = site_url
         self.instagram_url = instagram_url
         self.suporte_telegram = suporte_telegram
+        # Chats que um dia tiveram menu de administração registrado.
+        self.chats_legados = chats_legados or set()
         self._parar = threading.Event()
         self._offset = 0
 
@@ -158,7 +174,7 @@ class CommandListener:
             self._offset = resultados[-1]["update_id"] + 1
 
     def _run(self) -> None:
-        limpar_menu(self.token)
+        limpar_menu(self.token, self.chats_legados)
         self._descartar_backlog()
         log.info("Listener ativo (só apresentação — nenhum comando com efeito)")
 

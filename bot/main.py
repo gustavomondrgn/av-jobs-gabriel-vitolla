@@ -130,6 +130,22 @@ REPORT_CHAT_IDS = [
     if p.strip()
 ]
 
+# Chats que tinham menu de comandos administrativos antes de 12/08. Não dá
+# nenhum poder a eles — serve só para o bot conseguir APAGAR o menu antigo, que
+# o Telegram guarda por escopo de chat e sobrevive à remoção dos comandos.
+# Reaproveita TELEGRAM_ADMIN_IDS porque é exatamente essa a lista, e ela já está
+# cadastrada no Coolify.
+def _ids(bruto: str) -> set[int]:
+    saida: set[int] = set()
+    for pedaco in (bruto or "").replace(";", ",").split(","):
+        pedaco = pedaco.strip()
+        if pedaco.lstrip("-").isdigit():
+            saida.add(int(pedaco))
+    return saida
+
+
+CHATS_MENU_LEGADO = _ids(os.getenv("TELEGRAM_ADMIN_IDS", ""))
+
 
 def _flag(nome: str, padrao: bool) -> bool:
     bruto = os.getenv(nome, "").strip().lower()
@@ -1395,6 +1411,7 @@ def main() -> None:
         site_url=SITE_URL,
         instagram_url=INSTAGRAM_URL,
         suporte_telegram=SUPORTE_TELEGRAM,
+        chats_legados=CHATS_MENU_LEGADO,
     ).start()
 
     log.info("Relatório diário às %dh (%s), destino: %s",
