@@ -35,9 +35,16 @@ ONM_DETALHE = "https://api.onovomercado.com.br/mercado-de-trabalho/v1/projects/{
 GUPY_DETALHE = "https://employability-portal.gupy.io/api/v1/jobs/{}"
 LINKEDIN_DETALHE = "https://www.linkedin.com/jobs-guest/jobs/api/jobPosting/{}"
 
-# Fontes que não têm como ser verificadas. Vaga delas nunca é marcada como
-# fechada — melhor um anúncio velho no grupo do que um apagão por engano.
-SEM_VERIFICACAO = frozenset({"indeed"})
+# O Indeed é o caso especial: o site tem Cloudflare na frente e devolve 403 até
+# de IP residencial, mas a API do aplicativo — a mesma que o `python-jobspy`
+# usa para buscar — aceita consulta por chave. Chave viva volta a vaga; chave
+# morta volta lista vazia. E aceita LOTE, o que torna esta a fonte mais barata
+# de verificar de todas: 12 vagas numa requisição.
+INDEED_GRAPHQL = "https://apis.indeed.com/graphql"
+INDEED_LOTE = 12
+
+# Nenhuma fonte ficou de fora: as quatro respondem se a vaga ainda existe.
+SEM_VERIFICACAO: frozenset[str] = frozenset()
 
 
 def _classificar(resp: requests.Response) -> Estado:
@@ -81,8 +88,63 @@ def verificar(source: str, source_id: str, *,
                                 headers={"User-Agent": _UA}, timeout=TIMEOUT)
             return _classificar(resp)
 
+        if source == "indeed":
+            return verificar_indeed([source_id]).get(source_id, "desconhecida")
+
     except requests.RequestException as exc:
         log.debug("Falha checando %s:%s — %s", source, source_id, exc)
         return "desconhecida"
 
     return "desconhecida"
+
+
+def verificar_indeed(chaves: list[str]) -> dict[str, Estado]:
+    """Verifica várias vagas do Indeed numa requisição só.
+
+    A API devolve apenas as chaves que ainda existem; o que não voltar é vaga
+    encerrada. Como a resposta é uma lista e não um erro por item, uma falha da
+    requisição inteira precisa deixar TODAS como desconhecidas — devolver
+    "fechada" para o lote seria apagar doze mensagens boas de uma vez.
+    """
+    chaves = [c for c in chaves if c]
+    if not chaves:
+        return {}
+
+    resultado: dict[str, Estado] = {}
+    try:
+        from jobspy.indeed.constant import api_headers  # noqa: PLC0415
+        headers = {**api_headers, "indeed-co": "BR"}
+    except ImportError:
+        log.debug("jobspy indisponível — Indeed fica sem verificação")
+        return {c: "desconhecida" for c in chaves}
+
+    for i in range(0, len(chaves), INDEED_LOTE):
+        lote = chaves[i:i + INDEED_LOTE]
+        lista = ",".join(f'"{c}"' for c in lote)
+        query = ("query { jobData(input: {jobKeys: [" + lista + "]}) "
+                 "{ results { job { key } } } }")
+        try:
+            resp = requests.post(INDEED_GRAPHQL, headers=headers,
+                                 json={"query": query}, timeout=TIMEOUT)
+            if not resp.ok:
+                resultado.update({c: "desconhecida" for c in lote})
+                continue
+            dados = resp.json()
+            if dados.get("errors"):
+                log.debug("Indeed devolveu errors: %s", str(dados["errors"])[:150])
+                resultado.update({c: "desconhecida" for c in lote})
+                continue
+            vivas = {
+                r["job"]["key"]
+                for r in (dados.get("data", {}).get("jobData", {}).get("results") or [])
+                if r.get("job", {}).get("key")
+            }
+        except (requests.RequestException, ValueError, KeyError, TypeError) as exc:
+            log.debug("Falha checando lote do Indeed: %s", exc)
+            resultado.update({c: "desconhecida" for c in lote})
+            continue
+
+        for c in lote:
+            resultado[c] = "aberta" if c in vivas else "fechada"
+
+    return resultado

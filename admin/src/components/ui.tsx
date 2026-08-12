@@ -98,30 +98,27 @@ export function Nota({ valor }: { valor: number }) {
 /**
  * Bolinha de situação da vaga na plataforma de origem.
  *
- * Três estados, e o terceiro importa tanto quanto os outros: o Indeed é
- * protegido por Cloudflare e não há como perguntar se a vaga continua aberta.
- * Pintar de verde por omissão seria afirmar algo que não se sabe.
+ * Verde pulsando = ainda aberta. Vermelha = a plataforma tirou do ar, e a
+ * mensagem correspondente já saiu do grupo.
+ *
+ * As quatro fontes são verificáveis, inclusive o Indeed — o site dele tem
+ * Cloudflare, mas a API do aplicativo responde por chave de vaga. Por isso não
+ * existe mais um terceiro estado "não sei".
  */
-export function Bolinha({ fechadaEm, fonte }: {
-  fechadaEm: string | null; fonte: string;
-}) {
-  const semVerificacao = fonte === 'indeed';
-  const cor = semVerificacao ? 'var(--texto-fraco)'
-    : fechadaEm ? 'var(--negativo)' : 'var(--positivo)';
-  const titulo = semVerificacao
-    ? 'Indeed não permite verificar se a vaga continua aberta'
-    : fechadaEm ? `Vaga encerrada na plataforma em ${fechadaEm}`
-                : 'Vaga ainda aberta na plataforma';
+export function Bolinha({ fechadaEm }: { fechadaEm: string | null }) {
+  const aberta = !fechadaEm;
+  const cor = aberta ? 'var(--positivo)' : 'var(--negativo)';
+  const titulo = aberta
+    ? 'Vaga ainda aberta na plataforma'
+    : 'Vaga encerrada na plataforma — a mensagem foi removida do grupo';
   return (
     <span className="inline-flex items-center" title={titulo} aria-label={titulo}>
       <span
-        className="inline-block rounded-full"
+        className={`inline-block rounded-full ${aberta ? 'bolinha-viva' : ''}`}
         style={{
           width: 8, height: 8, background: cor,
-          // O anel deixa o ponto visível sobre a linha da tabela sem precisar
-          // aumentá-lo.
-          boxShadow: `0 0 0 2.5px color-mix(in srgb, ${cor} 22%, transparent)`,
-          opacity: semVerificacao ? 0.55 : 1,
+          boxShadow: aberta ? undefined
+            : `0 0 0 2.5px color-mix(in srgb, ${cor} 22%, transparent)`,
         }}
       />
     </span>

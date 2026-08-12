@@ -194,6 +194,19 @@ body {
   color: var(--texto-fraco);
 }
 
+/* Pulso da bolinha de "vaga aberta". Discreto de propósito: numa lista de 25
+   linhas, um pisca-pisca forte vira ruído. Some para quem pediu menos animação
+   no sistema. */
+@keyframes pulso-vaga {
+  0%, 100% { box-shadow: 0 0 0 2.5px color-mix(in srgb, var(--positivo) 24%, transparent); }
+  50%      { box-shadow: 0 0 0 5px   color-mix(in srgb, var(--positivo) 0%,  transparent); }
+}
+.bolinha-viva { animation: pulso-vaga 2.4s ease-in-out infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .bolinha-viva { animation: none; }
+}
+
 /* Foco visível e consistente para quem navega por teclado. */
 :focus-visible {
   outline: 2px solid var(--acento);

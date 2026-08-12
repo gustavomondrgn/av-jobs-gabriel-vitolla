@@ -131,7 +131,7 @@ export default async function VisaoGeral() {
             <ul className="flex flex-col divide-y" style={{ borderColor: 'var(--borda)' }}>
               {ultimas.linhas.map((v) => (
                 <li key={`${v.uid}-${v.status}`} className="py-2.5 first:pt-0 last:pb-0 flex items-center gap-3">
-                  <Bolinha fechadaEm={v.closed_at} fonte={v.source} />
+                  <Bolinha fechadaEm={v.closed_at} />
                   <Nota valor={v.score} />
                   <div className="min-w-0 flex-1">
                     <TituloVaga

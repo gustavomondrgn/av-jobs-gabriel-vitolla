@@ -24,7 +24,9 @@ check("404 -> fechada    ", vitality._classificar(Resp(404)), "fechada")
 check("403 -> desconhecida", vitality._classificar(Resp(403)), "desconhecida")
 check("429 -> desconhecida", vitality._classificar(Resp(429)), "desconhecida")
 check("500 -> desconhecida", vitality._classificar(Resp(500)), "desconhecida")
-check("indeed nunca verifica", vitality.verificar("indeed", "abc"), "desconhecida")
+# O Indeed agora e verificavel pela API do app; o que nao pode e um erro de
+# rede virar "fechada" e apagar doze mensagens boas de uma vez.
+check("indeed: lote vazio     ", vitality.verificar_indeed([]), {})
 check("onm sem token       ", vitality.verificar("onm", "1"), "desconhecida")
 
 print(); print("=" * 70); print("REGISTRO: dupla confirmacao antes de encerrar"); print("=" * 70)

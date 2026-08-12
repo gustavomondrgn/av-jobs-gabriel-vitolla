@@ -167,11 +167,15 @@ MIN_SCORE = int(os.getenv("MIN_SCORE", "0"))
 
 # --- Vaga encerrada --------------------------------------------------------
 # O que fazer quando a plataforma tira o anúncio do ar: "apagar" some com a
-# mensagem no grupo, "marcar" a mantém com um aviso de encerrada, "nada"
-# só registra no painel.
-ACAO_VAGA_ENCERRADA = os.getenv("ACAO_VAGA_ENCERRADA", "marcar").strip().lower()
+# mensagem no grupo (padrão, pedido do Gabriel — vaga morta é ruído num feed de
+# vagas), "marcar" a mantém riscada com um aviso, "nada" só registra no painel.
+ACAO_VAGA_ENCERRADA = os.getenv("ACAO_VAGA_ENCERRADA", "apagar").strip().lower()
 # De quanto em quanto tempo cada vaga é reexaminada, e quantas por ciclo.
-RECHECK_HORAS = int(os.getenv("RECHECK_HORAS", "12"))
+# Com 8 publicações/dia e 30 dias de acompanhamento são ~240 vagas vivas; a uma
+# checagem por dia cada uma, dá ~240 requisições/dia no total, contra as ~1.450
+# que o bot já faz para buscar. O Indeed é checado em lote, então na prática
+# fica ainda abaixo disso.
+RECHECK_HORAS = int(os.getenv("RECHECK_HORAS", "24"))
 RECHECK_POR_CICLO = int(os.getenv("RECHECK_POR_CICLO", "12"))
 RECHECK_DIAS = int(os.getenv("RECHECK_DIAS", "30"))
 
@@ -1318,11 +1322,19 @@ def revisar(fontes: list[Any], cfg: dict[str, Any]) -> None:
     onm = next((f for f in fontes if f.name == "onm"), None)
     token_onm = getattr(onm, "_token", None) if onm else None
 
+    # O Indeed aceita várias chaves por requisição; as do lote são resolvidas de
+    # uma vez só, o que derruba o custo dessa fonte a quase nada.
+    chaves_indeed = [i["source_id"] for i in pendentes if i["source"] == "indeed"]
+    estados_indeed = vitality.verificar_indeed(chaves_indeed) if chaves_indeed else {}
+
     encerradas = 0
     for item in pendentes:
-        estado = vitality.verificar(
-            item["source"], item["source_id"], token_onm=token_onm,
-        )
+        if item["source"] == "indeed":
+            estado = estados_indeed.get(item["source_id"], "desconhecida")
+        else:
+            estado = vitality.verificar(
+                item["source"], item["source_id"], token_onm=token_onm,
+            )
         if estado == "desconhecida":
             continue  # nem conta como falta: não sabemos de nada
 

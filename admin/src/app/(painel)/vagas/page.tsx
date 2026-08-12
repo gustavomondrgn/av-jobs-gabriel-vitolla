@@ -103,7 +103,7 @@ export default async function Vagas({ searchParams }: { searchParams: Promise<Bu
                       {/* Só faz sentido para vaga publicada: as outras nunca
                           chegaram ao grupo. */}
                       {v.status === 'sent'
-                        ? <Bolinha fechadaEm={v.closed_at} fonte={v.source} />
+                        ? <Bolinha fechadaEm={v.closed_at} />
                         : null}
                     </td>
                     <td className="px-4 py-3 align-top"><Nota valor={v.score} /></td>
