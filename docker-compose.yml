@@ -95,21 +95,35 @@ services:
       # produção: edita, commita, pusha → Coolify rebuilda. Local, rode
       # `python main.py` direto — o cache por mtime pega a edição na hora.
 
-  # O nome do serviço precisa casar com a variável SERVICE_FQDN_ADMIN_3000: o
-  # Coolify deriva o identificador do nome do serviço, e `av-jobs-admin` viraria
-  # outro sufixo. Com `admin`, a variável e o serviço batem e o Coolify gera
-  # sozinho a rota do Traefik e o certificado.
   admin:
     build:
       context: .
       dockerfile: admin/Dockerfile
     container_name: av-jobs-admin
     restart: unless-stopped
+    # Rota do Traefik declarada na mão.
+    #
+    # A variável `SERVICE_FQDN_*` do Coolify — tentada antes — só vale para os
+    # "Services" de um clique dele, não para uma aplicação com docker-compose
+    # próprio: o Traefik respondia 404 porque nenhuma rota chegava a existir.
+    # Para aplicação, o caminho suportado é o campo Domains na interface, que a
+    # API da 4.1.2 não persiste. Declarar os labels aqui resolve os dois
+    # problemas: funciona sem clique e fica versionado junto do resto.
+    labels:
+      - traefik.enable=true
+      # HTTP só existe para mandar todo mundo para o HTTPS.
+      - traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https
+      - traefik.http.routers.avadmin-http.entrypoints=http
+      - traefik.http.routers.avadmin-http.rule=Host(`admin.encontreseuav.com.br`)
+      - traefik.http.routers.avadmin-http.middlewares=redirect-to-https
+      # HTTPS com certificado emitido pelo mesmo resolver que o Coolify usa.
+      - traefik.http.routers.avadmin.entrypoints=https
+      - traefik.http.routers.avadmin.rule=Host(`admin.encontreseuav.com.br`)
+      - traefik.http.routers.avadmin.tls=true
+      - traefik.http.routers.avadmin.tls.certresolver=letsencrypt
+      - traefik.http.routers.avadmin.service=avadmin
+      - traefik.http.services.avadmin.loadbalancer.server.port=3000
     environment:
-      # Variável mágica do Coolify: ele lê o SERVICE_FQDN_* e gera sozinho as
-      # regras do Traefik e o certificado para este serviço do compose. É o
-      # jeito de definir o domínio sem depender de clique na interface.
-      - SERVICE_FQDN_ADMIN_3000
       # Mesmo Postgres do bot: um escreve os eventos, o outro os lê.
       - DATABASE_URL=${DATABASE_URL}
       # Assina o cookie de sessão. Sem isto o painel se recusa a subir — é o
