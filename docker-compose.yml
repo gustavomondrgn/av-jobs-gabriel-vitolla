@@ -95,7 +95,11 @@ services:
       # produção: edita, commita, pusha → Coolify rebuilda. Local, rode
       # `python main.py` direto — o cache por mtime pega a edição na hora.
 
-  av-jobs-admin:
+  # O nome do serviço precisa casar com a variável SERVICE_FQDN_ADMIN_3000: o
+  # Coolify deriva o identificador do nome do serviço, e `av-jobs-admin` viraria
+  # outro sufixo. Com `admin`, a variável e o serviço batem e o Coolify gera
+  # sozinho a rota do Traefik e o certificado.
+  admin:
     build:
       context: .
       dockerfile: admin/Dockerfile
