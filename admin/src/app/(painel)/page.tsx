@@ -4,7 +4,8 @@ import { kpis, serieDiaria, porFonte, motivosRecusa, listarVagas, bancoTemDados,
 import { lerConfig, rotuloFonte } from '@/lib/config';
 import { BarrasHorizontais } from '@/components/Graficos';
 import { GraficoDiario } from '@/components/GraficoDiario';
-import { Cartao, Metrica, Variacao, Selo, Nota, Vazio, ROTULOS_STATUS } from '@/components/ui';
+import { Cartao, Metrica, Variacao, Nota, Vazio, Bolinha, ROTULOS_STATUS }
+  from '@/components/ui';
 
 // O painel mostra o estado de agora; cache de página aqui só serviria para
 // mostrar número velho.
@@ -56,9 +57,11 @@ export default async function VisaoGeral() {
           detalhe="aprovadas, aguardando a vez"
         />
         <Metrica
-          rotulo="Nota média no mês"
-          valor={k.notaMediaMes ?? '—'}
-          detalhe="qualidade do que foi publicado"
+          rotulo="Ainda abertas"
+          valor={k.abertas30}
+          detalhe={k.encerradas30
+            ? `${k.encerradas30} já encerrada(s) na plataforma`
+            : 'nenhuma encerrada nos últimos 30 dias'}
         />
       </div>
 
@@ -128,6 +131,7 @@ export default async function VisaoGeral() {
             <ul className="flex flex-col divide-y" style={{ borderColor: 'var(--borda)' }}>
               {ultimas.linhas.map((v) => (
                 <li key={`${v.uid}-${v.status}`} className="py-2.5 first:pt-0 last:pb-0 flex items-center gap-3">
+                  <Bolinha fechadaEm={v.closed_at} fonte={v.source} />
                   <Nota valor={v.score} />
                   <div className="min-w-0 flex-1">
                     <TituloVaga

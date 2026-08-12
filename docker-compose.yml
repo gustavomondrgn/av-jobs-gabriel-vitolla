@@ -71,6 +71,12 @@ services:
       - SEND_WINDOW_END=${SEND_WINDOW_END:-23}
       - QUEUE_TTL_DAYS=${QUEUE_TTL_DAYS:-3}
       - MIN_SCORE=${MIN_SCORE:-0}
+      # Vaga que sai do ar na plataforma: "marcar" risca a mensagem com um
+      # aviso, "apagar" remove do grupo, "nada" só registra no painel.
+      - ACAO_VAGA_ENCERRADA=${ACAO_VAGA_ENCERRADA:-marcar}
+      - RECHECK_HORAS=${RECHECK_HORAS:-12}
+      - RECHECK_POR_CICLO=${RECHECK_POR_CICLO:-12}
+      - RECHECK_DIAS=${RECHECK_DIAS:-30}
       # Regras de corte.
       - REJECT_ENGLISH=${REJECT_ENGLISH:-true}
       - REJECT_SENIOR=${REJECT_SENIOR:-true}

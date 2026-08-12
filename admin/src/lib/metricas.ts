@@ -19,6 +19,8 @@ export type Kpis = {
   notaMediaMes: number | null;
   publicadasOntem: number;
   mediaDiaria30: number | null;
+  abertas30: number;
+  encerradas30: number;
 };
 
 export async function kpis(): Promise<Kpis> {
@@ -44,7 +46,13 @@ export async function kpis(): Promise<Kpis> {
         WHERE status = 'sent' AND date_trunc('month', local_day)
                                 = date_trunc('month', hoje.d))             AS nota_mes,
       (SELECT round((count(*)::numeric / 30), 1) FROM job_events, hoje
-        WHERE status = 'sent' AND local_day > hoje.d - 30)                 AS media_30
+        WHERE status = 'sent' AND local_day > hoje.d - 30)                 AS media_30,
+      (SELECT count(*) FROM job_events, hoje
+        WHERE status = 'sent' AND closed_at IS NULL
+          AND local_day > hoje.d - 30)                                     AS abertas_30,
+      (SELECT count(*) FROM job_events, hoje
+        WHERE status = 'sent' AND closed_at IS NOT NULL
+          AND local_day > hoje.d - 30)                                     AS encerradas_30
   `);
 
   const n = (v: string | null | undefined) => Number(v ?? 0);
@@ -59,6 +67,8 @@ export async function kpis(): Promise<Kpis> {
     recusadasHoje: n(r?.recusadas_hoje),
     notaMediaMes: f(r?.nota_mes),
     mediaDiaria30: f(r?.media_30),
+    abertas30: n(r?.abertas_30),
+    encerradas30: n(r?.encerradas_30),
   };
 }
 
@@ -121,6 +131,7 @@ export type Vaga = {
   status: string; score: number; work_mode: string; role_type: string;
   salary: string; reason: string; local_day: string; created_at: string;
   categoria: string; telegram_message_id: number | null;
+  closed_at: string | null;
 };
 
 /**
@@ -171,7 +182,7 @@ export async function listarVagas(f: FiltroVagas = {}) {
 
   const linhas = await query<Vaga>(`
     SELECT uid, source, title, company, url, status, score, work_mode,
-           role_type, salary, reason, categoria, telegram_message_id,
+           role_type, salary, reason, categoria, telegram_message_id, closed_at,
            to_char(local_day, 'DD/MM') AS local_day,
            to_char(created_at AT TIME ZONE 'America/Sao_Paulo', 'DD/MM HH24:MI') AS created_at
     FROM job_events

@@ -38,6 +38,7 @@ CHAVES = (
     "categoria",     # descartadas: categoria desligada no painel para a fonte
     "expirada",      # saíram da fila sem serem enviadas (validade/lotação)
     "falhou",        # o Telegram recusou a mensagem em definitivo
+    "encerrada",     # vaga saiu do ar na fonte depois de publicada
 )
 
 

@@ -29,8 +29,10 @@ import requests
 from dotenv import load_dotenv
 
 import filters
+import vitality
 from bot_control import CommandListener
 from dispatch import SendQueue
+from publicadas import RegistroPublicadas
 from sources import (
     GupySource, IndeedSource, Job, LinkedInSource, ONMSource, SourceError,
 )
@@ -117,6 +119,7 @@ SKIPPED_LOG_FILE = DATA_DIR / "skipped_jobs.jsonl"
 QUOTA_LOG_FILE = DATA_DIR / "quota_log.jsonl"
 STATS_FILE = DATA_DIR / "daily_stats.json"
 QUEUE_FILE = DATA_DIR / "send_queue.json"
+PUBLICADAS_FILE = DATA_DIR / "publicadas.json"
 
 # O container roda em UTC; tudo que é "dia" para o usuário é dia de Brasília.
 TIMEZONE_NAME = os.getenv("TIMEZONE", "America/Sao_Paulo")
@@ -161,6 +164,16 @@ SEND_WINDOW_START = int(os.getenv("SEND_WINDOW_START", "6"))
 SEND_WINDOW_END = int(os.getenv("SEND_WINDOW_END", "23"))
 QUEUE_TTL_DAYS = int(os.getenv("QUEUE_TTL_DAYS", "3"))
 MIN_SCORE = int(os.getenv("MIN_SCORE", "0"))
+
+# --- Vaga encerrada --------------------------------------------------------
+# O que fazer quando a plataforma tira o anúncio do ar: "apagar" some com a
+# mensagem no grupo, "marcar" a mantém com um aviso de encerrada, "nada"
+# só registra no painel.
+ACAO_VAGA_ENCERRADA = os.getenv("ACAO_VAGA_ENCERRADA", "marcar").strip().lower()
+# De quanto em quanto tempo cada vaga é reexaminada, e quantas por ciclo.
+RECHECK_HORAS = int(os.getenv("RECHECK_HORAS", "12"))
+RECHECK_POR_CICLO = int(os.getenv("RECHECK_POR_CICLO", "12"))
+RECHECK_DIAS = int(os.getenv("RECHECK_DIAS", "30"))
 
 # --- Regras de corte -------------------------------------------------------
 REJECT_ENGLISH = _flag("REJECT_ENGLISH", True)
@@ -229,6 +242,7 @@ CATEGORIAS: tuple[str, ...] = (
 
 STATS = DailyStats(STATS_FILE, historico=QUOTA_LOG_FILE)
 FILA = SendQueue(QUEUE_FILE, validade_dias=QUEUE_TTL_DAYS)
+PUBLICADAS = RegistroPublicadas(PUBLICADAS_FILE, dias_de_vida=RECHECK_DIAS)
 STORE = Store()
 
 
@@ -252,6 +266,8 @@ def config_atual() -> dict[str, Any]:
         "require_explicit_remote": REQUIRE_EXPLICIT_REMOTE,
         "sources": {},
     }
+    base["acao_vaga_encerrada"] = ACAO_VAGA_ENCERRADA
+    base["recheck_horas"] = RECHECK_HORAS
     base.update({k: v for k, v in STORE.config().items() if v is not None})
     return base
 
@@ -594,8 +610,8 @@ def _retry_delay_seconds(exc: Exception, attempt: int) -> float:
 # Telemetria do dia
 # ---------------------------------------------------------------------------
 
-def _bump(key: str, fonte: str | None = None) -> None:
-    STATS.bump(hoje_local(), key, fonte)
+def _bump(key: str, fonte: str | None = None, n: int = 1) -> None:
+    STATS.bump(hoje_local(), key, fonte, n=n)
 
 
 def log_filter_stats() -> None:
@@ -853,6 +869,65 @@ def send_telegram(text: str, chat_id: str | int | None = None) -> int | None:
         # A mensagem foi entregue; só não deu para ler o id. Não é motivo para
         # tratar o envio como falho e reenviar a vaga.
         return None
+
+
+def apagar_mensagem(message_id: int) -> bool:
+    """Apaga uma mensagem do grupo. O bot é admin com `can_delete_messages`,
+    então não vale o limite de 48h que existe para bot comum."""
+    try:
+        r = requests.post(
+            f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/deleteMessage",
+            json={"chat_id": TELEGRAM_CHAT_ID, "message_id": message_id},
+            timeout=REQUEST_TIMEOUT,
+        )
+        if r.ok:
+            return True
+        # "message to delete not found" = alguém já apagou. Missão cumprida.
+        if "not found" in r.text.lower():
+            return True
+        log.warning("deleteMessage %s falhou: %s", message_id, r.text[:150])
+    except requests.RequestException as exc:
+        log.warning("deleteMessage %s falhou: %s", message_id, exc)
+    return False
+
+
+def marcar_mensagem_encerrada(message_id: int, html_original: str) -> bool:
+    """Reescreve a mensagem avisando que a vaga saiu do ar.
+
+    Preferido ao apagar como padrão: quem já tinha visto a vaga entende o que
+    aconteceu, em vez de achar que a mensagem sumiu do nada. O texto original
+    fica riscado, então o histórico do grupo continua fazendo sentido.
+    """
+    aviso = "🔴 <b>VAGA ENCERRADA</b> — não está mais disponível na plataforma"
+    corpo = f"{aviso}\n\n<s>{_sem_tags(html_original)}</s>"
+    try:
+        r = requests.post(
+            f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/editMessageText",
+            json={"chat_id": TELEGRAM_CHAT_ID, "message_id": message_id,
+                  "text": corpo[:4000], "parse_mode": "HTML",
+                  "disable_web_page_preview": True},
+            timeout=REQUEST_TIMEOUT,
+        )
+        if r.ok or "not modified" in r.text.lower():
+            return True
+        log.warning("editMessageText %s falhou: %s", message_id, r.text[:150])
+    except requests.RequestException as exc:
+        log.warning("editMessageText %s falhou: %s", message_id, exc)
+    return False
+
+
+_TAGS_RE = re.compile(r"</?(?:b|i|s|u|code|pre)>")
+
+
+def _sem_tags(html_texto: str) -> str:
+    """Tira a formatação interna antes de riscar tudo.
+
+    O `<s>` não pode envolver `<b>` aninhado sem o Telegram reclamar de HTML
+    inválido, e o link vira texto para não convidar ao clique numa vaga morta.
+    """
+    limpo = _TAGS_RE.sub("", html_texto)
+    limpo = re.sub(r'<a href="[^"]*">([^<]*)</a>', lambda m: m.group(1), limpo)
+    return limpo
 
 
 def is_transient_send_error(exc: requests.RequestException) -> bool:
@@ -1193,6 +1268,14 @@ def despachar(cfg: dict[str, Any]) -> None:
 
     FILA.confirmar_envio(agora, hoje)
     _bump("sent", item.get("source"))
+
+    # Guarda o suficiente para revisitar a vaga depois e, se ela tiver saído do
+    # ar, alcançar esta mensagem no grupo.
+    PUBLICADAS.registrar(
+        uid=item["uid"], source=item.get("source", ""),
+        source_id=item["uid"].split(":", 1)[-1], title=item.get("title", ""),
+        message_id=message_id, agora=agora, html=item.get("html", ""),
+    )
     log.info("Publicada %s (nota %s) — %s",
              item["uid"], item.get("score"), item.get("title", "")[:70])
 
@@ -1204,6 +1287,65 @@ def despachar(cfg: dict[str, Any]) -> None:
         categoria=item.get("categoria", ""),
         telegram_message_id=message_id,
     )
+
+
+# ---------------------------------------------------------------------------
+# Revisor: a vaga publicada ainda está aberta?
+# ---------------------------------------------------------------------------
+
+def revisar(fontes: list[Any], cfg: dict[str, Any]) -> None:
+    """Reexamina algumas vagas já publicadas e trata as que saíram do ar.
+
+    Roda a conta-gotas — algumas por ciclo, cada vaga no máximo uma vez por
+    `recheck_horas` — para não transformar a verificação num segundo scraping.
+    Com 8 publicações por dia e 30 dias de acompanhamento são ~240 vagas; a 12
+    por ciclo de 10 min, cada uma é revista com folga dentro do intervalo.
+    """
+    agora = agora_local()
+    acao = str(cfg.get("acao_vaga_encerrada") or ACAO_VAGA_ENCERRADA).lower()
+    if acao == "nada":
+        return
+
+    pendentes = PUBLICADAS.a_checar(
+        agora=agora,
+        intervalo_horas=int(cfg.get("recheck_horas") or RECHECK_HORAS),
+        limite=RECHECK_POR_CICLO,
+    )
+    if not pendentes:
+        return
+
+    # O ONM exige token; pega o da própria fonte, que já se reautentica sozinha.
+    onm = next((f for f in fontes if f.name == "onm"), None)
+    token_onm = getattr(onm, "_token", None) if onm else None
+
+    encerradas = 0
+    for item in pendentes:
+        estado = vitality.verificar(
+            item["source"], item["source_id"], token_onm=token_onm,
+        )
+        if estado == "desconhecida":
+            continue  # nem conta como falta: não sabemos de nada
+
+        virou = PUBLICADAS.marcar_checada(item["uid"], agora, estado == "fechada")
+        if not virou:
+            continue
+
+        # Passou pelas confirmações necessárias: a vaga acabou mesmo.
+        encerradas += 1
+        message_id = int(item["message_id"])
+        if acao == "apagar":
+            ok = apagar_mensagem(message_id)
+            verbo = "apagada"
+        else:
+            ok = marcar_mensagem_encerrada(message_id, item.get("html") or item["title"])
+            verbo = "marcada como encerrada"
+        log.info("Vaga %s encerrada na fonte — mensagem %s (%s)",
+                 item["uid"], verbo, "ok" if ok else "falhou")
+
+        STORE.marcar_encerrada(item["uid"], agora.isoformat())
+
+    if encerradas:
+        _bump("encerrada", None, n=encerradas)
 
 
 # ---------------------------------------------------------------------------
@@ -1416,6 +1558,9 @@ def main() -> None:
 
     log.info("Relatório diário às %dh (%s), destino: %s",
              REPORT_HOUR, TIMEZONE_NAME, REPORT_TO)
+    log.info("Vaga encerrada na fonte: ação=%s · rechecagem a cada %dh · "
+             "acompanhando por %d dias (Indeed não é verificável)",
+             ACAO_VAGA_ENCERRADA, RECHECK_HORAS, RECHECK_DIAS)
 
     while True:
         cfg = config_atual()
@@ -1434,6 +1579,12 @@ def main() -> None:
             despachar(cfg)
         except Exception as exc:  # noqa: BLE001
             log.exception("Erro no despacho: %s", exc)
+
+        # Revê algumas vagas já publicadas: ainda estão abertas?
+        try:
+            revisar(fontes, cfg)
+        except Exception as exc:  # noqa: BLE001
+            log.exception("Erro na revisão de vagas: %s", exc)
 
         # Relatório do dia. O dia é o LOCAL, não o UTC — era essa confusão que
         # fazia o relatório sair com números de uma hora só.

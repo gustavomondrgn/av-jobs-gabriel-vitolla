@@ -95,6 +95,39 @@ export function Nota({ valor }: { valor: number }) {
   );
 }
 
+/**
+ * Bolinha de situação da vaga na plataforma de origem.
+ *
+ * Três estados, e o terceiro importa tanto quanto os outros: o Indeed é
+ * protegido por Cloudflare e não há como perguntar se a vaga continua aberta.
+ * Pintar de verde por omissão seria afirmar algo que não se sabe.
+ */
+export function Bolinha({ fechadaEm, fonte }: {
+  fechadaEm: string | null; fonte: string;
+}) {
+  const semVerificacao = fonte === 'indeed';
+  const cor = semVerificacao ? 'var(--texto-fraco)'
+    : fechadaEm ? 'var(--negativo)' : 'var(--positivo)';
+  const titulo = semVerificacao
+    ? 'Indeed não permite verificar se a vaga continua aberta'
+    : fechadaEm ? `Vaga encerrada na plataforma em ${fechadaEm}`
+                : 'Vaga ainda aberta na plataforma';
+  return (
+    <span className="inline-flex items-center" title={titulo} aria-label={titulo}>
+      <span
+        className="inline-block rounded-full"
+        style={{
+          width: 8, height: 8, background: cor,
+          // O anel deixa o ponto visível sobre a linha da tabela sem precisar
+          // aumentá-lo.
+          boxShadow: `0 0 0 2.5px color-mix(in srgb, ${cor} 22%, transparent)`,
+          opacity: semVerificacao ? 0.55 : 1,
+        }}
+      />
+    </span>
+  );
+}
+
 export function Vazio({ titulo, texto }: { titulo: string; texto: string }) {
   return (
     <div className="text-center py-12 px-6">

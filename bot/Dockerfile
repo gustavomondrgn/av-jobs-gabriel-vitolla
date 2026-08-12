@@ -9,7 +9,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Código do bot.
 COPY bot/main.py bot/sources.py bot/bot_control.py bot/filters.py \
-     bot/dispatch.py bot/telemetry.py bot/store.py ./
+     bot/dispatch.py bot/telemetry.py bot/store.py \
+     bot/vitality.py bot/publicadas.py ./
 
 # Configuração do filtro. `main.py` resolve os caminhos a partir de
 # `<pasta do main>/config/` — mexer aqui exige mexer no CONFIG_DIR de lá.

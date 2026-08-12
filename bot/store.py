@@ -159,6 +159,14 @@ class Store:
              categoria, telegram_message_id),
         )
 
+    def marcar_encerrada(self, uid: str, quando_iso: str) -> None:
+        """Anota que a vaga saiu do ar. É o que pinta a bolinha vermelha."""
+        self._executar(
+            "UPDATE job_events SET closed_at = %s::timestamptz "
+            "WHERE uid = %s AND status = %s AND closed_at IS NULL",
+            (quando_iso, uid, "sent"),
+        )
+
     # -- banco → bot --------------------------------------------------------
 
     def config(self, *, forcar: bool = False) -> dict[str, Any]:

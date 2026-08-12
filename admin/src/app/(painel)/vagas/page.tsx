@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { listarVagas, linkTelegram } from '@/lib/metricas';
 import { FONTES, rotuloFonte, rotuloCategoria } from '@/lib/config';
-import { Selo, Nota, Vazio, ROTULOS_STATUS } from '@/components/ui';
+import { Selo, Nota, Vazio, Bolinha, ROTULOS_STATUS } from '@/components/ui';
 
 export const dynamic = 'force-dynamic';
 
@@ -90,8 +90,8 @@ export default async function Vagas({ searchParams }: { searchParams: Promise<Bu
             <table className="w-full text-left border-collapse min-w-[720px]">
               <thead>
                 <tr className="border-b" style={{ borderColor: 'var(--borda)' }}>
-                  {['Nota', 'Vaga', 'Fonte', 'Situação', 'Quando'].map((h) => (
-                    <th key={h} className="rotulo font-semibold px-4 py-2.5">{h}</th>
+                  {['', 'Nota', 'Vaga', 'Fonte', 'Situação', 'Quando'].map((h, i) => (
+                    <th key={h || i} className="rotulo font-semibold px-4 py-2.5">{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -99,6 +99,13 @@ export default async function Vagas({ searchParams }: { searchParams: Promise<Bu
                 {r.linhas.map((v) => (
                   <tr key={`${v.uid}-${v.status}`} className="border-b last:border-0"
                       style={{ borderColor: 'var(--borda)' }}>
+                    <td className="pl-4 pr-1 py-3 align-top">
+                      {/* Só faz sentido para vaga publicada: as outras nunca
+                          chegaram ao grupo. */}
+                      {v.status === 'sent'
+                        ? <Bolinha fechadaEm={v.closed_at} fonte={v.source} />
+                        : null}
+                    </td>
                     <td className="px-4 py-3 align-top"><Nota valor={v.score} /></td>
                     <td className="px-4 py-3 align-top max-w-[400px]">
                       {(() => {

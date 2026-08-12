@@ -32,6 +32,9 @@ CREATE TABLE IF NOT EXISTS job_events (
 -- já existe ele é ignorado pelo IF NOT EXISTS e as colunas nunca apareceriam.
 ALTER TABLE job_events ADD COLUMN IF NOT EXISTS categoria    TEXT    NOT NULL DEFAULT '';
 ALTER TABLE job_events ADD COLUMN IF NOT EXISTS telegram_message_id BIGINT;
+-- Quando a vaga saiu do ar na plataforma de origem. NULL = ainda aberta (ou
+-- fonte sem como verificar, caso do Indeed).
+ALTER TABLE job_events ADD COLUMN IF NOT EXISTS closed_at TIMESTAMPTZ;
 
 -- O painel quase sempre pergunta "o que aconteceu nos últimos N dias, por
 -- status" — daí o índice composto em vez de um por coluna.
