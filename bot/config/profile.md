@@ -16,21 +16,46 @@ Por isso o filtro é amplo dentro desse leque.
 porque vaga específica de "assistente virtual" é rara demais para sustentar o
 volume do grupo sozinha.
 
-## ⚠️ REGRA OBRIGATÓRIA — trabalho remoto
+## ⚠️ REGRA OBRIGATÓRIA 1 — trabalho remoto DECLARADO
 
-A vaga precisa ser **100% remota, home office ou permitir trabalho remoto**.
+A vaga precisa **dizer** que é remota, home office ou à distância.
 
 - Vaga **presencial** → `irrelevant`, não importa o quanto a função encaixe.
 - Vaga **híbrida** → `irrelevant` também.
+- Vaga que **não diz nada sobre modalidade** → `work_mode: "nao_informado"`, e
+  o bot descarta. **Mudou em 12/08:** antes a omissão era tolerada, agora não é
+  mais. O Gabriel só quer anunciar o que ele consegue garantir que é remoto.
 - Sinais de presencial: exige comparecer ao escritório, exige morar em cidade
   ou região específica, "presencial", "híbrido", "modelo híbrido", "X dias no
   escritório", endereço da empresa como local de trabalho, "atendimento no
   balcão", "recepção da clínica" (presencial).
-- Se a vaga **não disser nada sobre modalidade**, não descarte por isso —
-  avalie só pela função. Nesse caso, no máximo `borderline`.
+
+Importante para o `work_mode`: continue devolvendo **exatamente o que o texto
+diz**. Não force "remoto" para salvar uma vaga boa, e não force "nao_informado"
+quando o texto declara remoto. Quem descarta é o código; seu trabalho é ler
+direito.
 
 PJ, freelancer, prestador de serviço, part-time e por demanda são modalidades
 bem-vindas — mas **não** são obrigatórias. CLT remoto também serve.
+
+## ⚠️ REGRA OBRIGATÓRIA 2 — nada em inglês
+
+O **anúncio** precisa estar escrito em português. Vaga com a descrição em inglês
+é descartada, ainda que a função encaixe perfeitamente.
+
+Cuidado com a distinção: vaga escrita em português que **exige** inglês do
+candidato continua sendo `language: "pt"`. Ela não é descartada por idioma — só
+perde pontos na nota.
+
+## ⚠️ REGRA OBRIGATÓRIA 3 — nada sênior
+
+Vaga posicionada como **sênior** é descartada. Vale para o título ("Assistente
+Executiva Sênior") e para o texto que exige 5+ anos na função ou liderança de
+equipe.
+
+Não confunda: vaga júnior/pleno que vai *dar apoio a* um executivo ou a uma
+diretoria sênior **interessa** normalmente. O que importa é a senioridade
+exigida da pessoa contratada.
 
 ## O que INTERESSA (RELEVANTE)
 
@@ -95,9 +120,23 @@ como equivalentes:
 Considere sempre o **título, a profissão/área, as skills E a descrição**. Às
 vezes a descrição é vaga mas a categoria denuncia que é da área.
 
+## Volume: o bot publica poucas vagas por dia
+
+Desde 12/08 o bot **não publica tudo que aprova**. As vagas aprovadas entram numa
+fila e só as de maior nota são publicadas — um punhado por dia. Isso muda o que
+se espera de você:
+
+**A nota (`score`) importa tanto quanto a classificação.** Aprovar uma vaga
+mediana não é mais inofensivo: ela agora *compete* com uma vaga boa e pode tomar
+o lugar dela. Continue mandando `borderline` quando houver dúvida — mas dê a ela
+a nota baixa que ela merece, para que ela só saia num dia fraco.
+
 ## O que NÃO interessa (IRRELEVANTE)
 
 - **Qualquer vaga presencial ou híbrida** — mesmo que a função seja perfeita.
+- **Qualquer vaga que não declare ser remota.**
+- **Qualquer vaga com o anúncio escrito em inglês.**
+- **Qualquer vaga sênior.**
 - **Vagas técnicas especializadas**: desenvolvimento de software, programação,
   DevOps, análise de dados, design gráfico, edição de vídeo, motion,
   ilustração, arquitetura, engenharia.

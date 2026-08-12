@@ -1,0 +1,202 @@
+@import "tailwindcss";
+
+/* ---------------------------------------------------------------------------
+   Identidade — extraída da logo do AV Jobs.
+
+   A logo tem quatro cores: o azul-marinho do fundo, o azul vivo do anel, o
+   azul claro da faceta do "A" e o branco. O painel usa as quatro, mas com
+   papéis muito desiguais de propósito: a superfície é neutra e o azul aparece
+   só onde a pessoa precisa olhar — botão primário, item ativo da navegação,
+   série principal do gráfico, número em destaque.
+
+   Se tudo for azul, nada é azul.
+--------------------------------------------------------------------------- */
+
+@theme {
+  /* Azul vivo do anel da logo — a cor de ação. */
+  --color-brand-50:  #eef5ff;
+  --color-brand-100: #d9e8ff;
+  --color-brand-200: #bcd7ff;
+  --color-brand-300: #8cbef8;  /* faceta clara do "A" */
+  --color-brand-400: #5b9bf5;
+  --color-brand-500: #1c6ef2;  /* anel */
+  --color-brand-600: #0f57d4;
+  --color-brand-700: #0d45a8;
+  --color-brand-800: #103a85;
+  --color-brand-900: #0a1d48;  /* marinho do fundo */
+  --color-brand-950: #061029;
+
+  /* Neutros levemente frios, para conversarem com o azul sem competir. */
+  --color-slate-25: #fbfcfe;
+
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+               "Helvetica Neue", Arial, sans-serif;
+
+  --radius-card: 0.875rem;
+}
+
+/* --- Superfícies -----------------------------------------------------------
+   Tokens semânticos em vez de cor crua nos componentes: trocar o tema é mexer
+   aqui, e não em quarenta arquivos.
+--------------------------------------------------------------------------- */
+
+/* O tema tem TRÊS estados, não dois:
+     - `data-tema="claro"`  → o usuário escolheu claro
+     - `data-tema="escuro"` → o usuário escolheu escuro
+     - atributo ausente     → segue o sistema (o padrão)
+
+   Por isso a paleta clara mora no `:root` puro (vale sempre, é o piso), o
+   escuro do sistema é aplicado só quando o usuário NÃO pediu claro, e a escolha
+   explícita por escuro vem por último para ganhar dos dois. Definir uma cor
+   apenas dentro do `@media` faria o botão de tema não funcionar em máquina
+   configurada no claro. */
+
+:root {
+  --fundo:          #f7f9fc;
+  --superficie:     #ffffff;
+  --superficie-2:   #f2f5fa;
+  --borda:          #e3e9f2;
+  --borda-forte:    #cfd8e6;
+  --texto:          #0f172a;
+  --texto-suave:    #5a6b85;
+  --texto-fraco:    #8a99b0;
+  --acento:         #1c6ef2;
+  --acento-suave:   #eef5ff;
+  --positivo:       #0e9f6e;
+  --atencao:        #c2820a;
+  --negativo:       #d64545;
+  --sombra:         0 1px 2px rgba(15, 23, 42, .04), 0 1px 3px rgba(15, 23, 42, .06);
+
+  /* Logo. O SVG oficial tem o corpo do "A/V" em branco, feito para fundo
+     azul-marinho; no tema claro ele desapareceria, então vira marinho. */
+  --marca-anel:   #1e74f6;
+  --marca-corpo:  #0a1d48;
+  --marca-faceta: #4f90ff;
+
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-tema="claro"]) {
+    --fundo:        #070d1c;
+    --superficie:   #0c1428;
+    --superficie-2: #121c35;
+    --borda:        #1c2947;
+    --borda-forte:  #2a3a5e;
+    --texto:        #eaf0fa;
+    --texto-suave:  #93a3bf;
+    --texto-fraco:  #64748b;
+    --acento:       #4f90ff;
+    --acento-suave: #10203f;
+    --positivo:     #34d399;
+    --atencao:      #fbbf24;
+    --negativo:     #f87171;
+    --sombra:       0 1px 2px rgba(0, 0, 0, .3);
+    --marca-anel:   #1e74f6;
+    --marca-corpo:  #fefefe;
+    --marca-faceta: #7bbbf8;
+    color-scheme: dark;
+  }
+}
+
+:root[data-tema="escuro"] {
+  --fundo:        #070d1c;
+  --superficie:   #0c1428;
+  --superficie-2: #121c35;
+  --borda:        #1c2947;
+  --borda-forte:  #2a3a5e;
+  --texto:        #eaf0fa;
+  --texto-suave:  #93a3bf;
+  --texto-fraco:  #64748b;
+  --acento:       #4f90ff;
+  --acento-suave: #10203f;
+  --positivo:     #34d399;
+  --atencao:      #fbbf24;
+  --negativo:     #f87171;
+  --sombra:       0 1px 2px rgba(0, 0, 0, .3);
+  --marca-anel:   #1e74f6;
+  --marca-corpo:  #fefefe;
+  --marca-faceta: #7bbbf8;
+  color-scheme: dark;
+}
+
+* { border-color: var(--borda); }
+
+body {
+  background: var(--fundo);
+  color: var(--texto);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Números de métrica alinhados em coluna: sem isso a tabela "dança" quando um
+   valor passa de 9 para 10. */
+.tabular { font-variant-numeric: tabular-nums; }
+
+/* --- Componentes recorrentes ---------------------------------------------- */
+
+.cartao {
+  background: var(--superficie);
+  border: 1px solid var(--borda);
+  border-radius: var(--radius-card);
+  box-shadow: var(--sombra);
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: .5rem;
+  border-radius: .625rem;
+  font-weight: 550;
+  font-size: .875rem;
+  padding: .5625rem 1rem;
+  transition: background .15s, border-color .15s, opacity .15s;
+  cursor: pointer;
+}
+.btn:disabled { opacity: .55; cursor: not-allowed; }
+
+.btn-primario {
+  background: var(--acento);
+  color: #fff;
+  border: 1px solid transparent;
+}
+.btn-primario:hover:not(:disabled) { background: var(--color-brand-600); }
+
+.btn-neutro {
+  background: var(--superficie);
+  color: var(--texto);
+  border: 1px solid var(--borda-forte);
+}
+.btn-neutro:hover:not(:disabled) { background: var(--superficie-2); }
+
+.campo {
+  width: 100%;
+  background: var(--superficie);
+  border: 1px solid var(--borda-forte);
+  border-radius: .625rem;
+  padding: .5625rem .75rem;
+  font-size: .875rem;
+  color: var(--texto);
+  outline: none;
+  transition: border-color .15s, box-shadow .15s;
+}
+.campo:focus {
+  border-color: var(--acento);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--acento) 18%, transparent);
+}
+
+.rotulo {
+  font-size: .75rem;
+  font-weight: 600;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--texto-fraco);
+}
+
+/* Foco visível e consistente para quem navega por teclado. */
+:focus-visible {
+  outline: 2px solid var(--acento);
+  outline-offset: 2px;
+  border-radius: 4px;
+}

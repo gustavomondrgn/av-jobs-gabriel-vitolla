@@ -1,14 +1,32 @@
+# Segredos
 .env
+.env.local
+*.env.local
+
+# Estado do bot (fica no volume, nunca no Git)
 seen_ids.json
+send_queue.json
+daily_stats.json
+quota_log.jsonl
+skipped_jobs.jsonl
+bot_state.json
+bot.log
+bot/data/
+
+# Python
 __pycache__/
 *.pyc
 .venv/
-bot.log
-quota_log.jsonl
-skipped_jobs.jsonl
-ONM-BOT-NOTIFIER-CONTEXT.md
-CONTEXTO-INICIAL.md
-ESTADO-ATUAL.md
-PROMPT-PROXIMO-CHAT.md
-BACKLOG.md
-*Anotações do Gemini.md
+
+# Node / Next.js (painel)
+node_modules/
+.next/
+out/
+next-env.d.ts
+*.tsbuildinfo
+
+# Documentação de trabalho — contexto interno, não vai pro repositório
+docs/
+
+# Identidade visual: 4,4 MB que o Coolify clonaria a cada deploy sem usar
+brand/

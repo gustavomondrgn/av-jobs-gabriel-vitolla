@@ -1,8 +1,14 @@
 """AV Jobs Bot — monitora vagas em várias fontes e notifica no Telegram.
 
 Filtra as vagas para o perfil de Assistente Virtual descrito em `profile.md`.
-As fontes ficam em `sources.py`; aqui mora só o pipeline: buscar → deduplicar →
-pré-filtrar → classificar → notificar.
+As fontes ficam em `sources.py`; aqui mora só o pipeline:
+
+    buscar → deduplicar → filtros baratos → classificar → ENFILEIRAR → despachar
+
+O penúltimo passo é o que mudou em 12/08: aprovar uma vaga deixou de significar
+publicá-la. A vaga aprovada entra numa fila com nota (`dispatch.py`) e um
+despachante publica as melhores, no máximo N por dia, espaçadas dentro da janela
+de horário. Sem isso o grupo recebia tudo, de madrugada inclusive.
 """
 
 from __future__ import annotations
@@ -22,10 +28,14 @@ from typing import Any, Literal
 import requests
 from dotenv import load_dotenv
 
-from bot_control import CommandListener, ControlState, parse_admin_ids
+import filters
+from bot_control import CommandListener
+from dispatch import SendQueue
 from sources import (
     GupySource, IndeedSource, Job, LinkedInSource, ONMSource, SourceError,
 )
+from store import Store
+from telemetry import DailyStats
 
 try:
     from zoneinfo import ZoneInfo
@@ -62,10 +72,40 @@ DATA_DIR = Path(os.getenv("DATA_DIR", "."))
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.1-flash-lite").strip()
-PROFILE_FILE = Path(os.getenv("PROFILE_FILE", "profile.md"))
-TERMS_FILE = Path(os.getenv("TERMS_FILE", "search_terms.txt"))
+
+# Os arquivos de configuração do filtro moram ao lado do código, em bot/config/.
+# O caminho é resolvido a partir DESTE arquivo, não do diretório de trabalho:
+# assim `python bot/main.py` funciona de qualquer pasta e o container não
+# depende de onde o CMD foi chamado.
+BASE_DIR = Path(__file__).resolve().parent
+CONFIG_DIR = BASE_DIR / "config"
+
+
+def _config_file(env_var: str, nome: str) -> Path:
+    """Resolve um arquivo de configuração, tolerando caminho velho no ambiente.
+
+    Cuidado que já custou caro uma vez: até 12/08 estes arquivos ficavam na raiz
+    e o painel do Coolify guarda `PROFILE_FILE=profile.md` de lá. Honrar esse
+    valor cegamente depois da mudança de pastas apontaria para um arquivo
+    inexistente — e o bot trata "sem profile.md" como **filtro desligado**, ou
+    seja, publicaria tudo. Se o caminho do ambiente não existir, cai para
+    `bot/config/`, que existe sempre porque vai dentro da imagem.
+    """
+    padrao = CONFIG_DIR / nome
+    bruto = os.getenv(env_var, "").strip()
+    if not bruto:
+        return padrao
+    caminho = Path(bruto)
+    if caminho.exists():
+        return caminho
+    log.warning("%s=%r não existe — usando %s", env_var, bruto, padrao)
+    return padrao
+
+
+PROFILE_FILE = _config_file("PROFILE_FILE", "profile.md")
+TERMS_FILE = _config_file("TERMS_FILE", "search_terms.txt")
 # O LinkedIn tem lista própria e curta: lá cada vaga custa duas requisições.
-LINKEDIN_TERMS_FILE = Path(os.getenv("LINKEDIN_TERMS_FILE", "search_terms_linkedin.txt"))
+LINKEDIN_TERMS_FILE = _config_file("LINKEDIN_TERMS_FILE", "search_terms_linkedin.txt")
 
 # Fontes ativas, separadas por vírgula. Permite desligar uma sem mexer no código.
 ENABLED_SOURCES = os.getenv("SOURCES", "onm,gupy,indeed,linkedin")
@@ -75,16 +115,48 @@ TELEGRAM_URL = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
 SEEN_FILE = DATA_DIR / "seen_ids.json"
 SKIPPED_LOG_FILE = DATA_DIR / "skipped_jobs.jsonl"
 QUOTA_LOG_FILE = DATA_DIR / "quota_log.jsonl"
-CONTROL_FILE = DATA_DIR / "bot_state.json"
+STATS_FILE = DATA_DIR / "daily_stats.json"
+QUEUE_FILE = DATA_DIR / "send_queue.json"
 
-# Quem pode mandar comando no privado do bot. Vazio = comandos desligados.
-ADMIN_IDS = parse_admin_ids(os.getenv("TELEGRAM_ADMIN_IDS", ""))
-
-# O container roda em UTC; o relatório tem que sair no horário de Brasília.
+# O container roda em UTC; tudo que é "dia" para o usuário é dia de Brasília.
 TIMEZONE_NAME = os.getenv("TIMEZONE", "America/Sao_Paulo")
 REPORT_HOUR = int(os.getenv("REPORT_HOUR", "22"))
 # Para onde vai o relatório diário: "grupo" ou "privado".
 REPORT_TO = os.getenv("REPORT_TO", "grupo").strip().lower()
+# Quem recebe o relatório quando REPORT_TO=privado. Não dá poder nenhum sobre o
+# bot — desde 12/08 não existe comando administrativo.
+REPORT_CHAT_IDS = [
+    p.strip() for p in os.getenv("REPORT_CHAT_IDS", "").replace(";", ",").split(",")
+    if p.strip()
+]
+
+
+def _flag(nome: str, padrao: bool) -> bool:
+    bruto = os.getenv(nome, "").strip().lower()
+    if not bruto:
+        return padrao
+    return bruto in ("1", "true", "sim", "yes", "on")
+
+
+# --- Controle de volume e horário -----------------------------------------
+# Padrões pedidos pelo Gabriel em 12/08. O painel sobrescreve em runtime.
+DAILY_LIMIT = int(os.getenv("DAILY_LIMIT", "8"))
+SEND_WINDOW_START = int(os.getenv("SEND_WINDOW_START", "6"))
+SEND_WINDOW_END = int(os.getenv("SEND_WINDOW_END", "23"))
+QUEUE_TTL_DAYS = int(os.getenv("QUEUE_TTL_DAYS", "3"))
+MIN_SCORE = int(os.getenv("MIN_SCORE", "0"))
+
+# --- Regras de corte -------------------------------------------------------
+REJECT_ENGLISH = _flag("REJECT_ENGLISH", True)
+REJECT_SENIOR = _flag("REJECT_SENIOR", True)
+REQUIRE_EXPLICIT_REMOTE = _flag("REQUIRE_EXPLICIT_REMOTE", True)
+
+# --- Apresentação do bot no privado ---------------------------------------
+SITE_URL = os.getenv("SITE_URL", "https://gabrielvitolla.com.br").strip()
+INSTAGRAM_URL = os.getenv(
+    "INSTAGRAM_URL", "https://instagram.com/gabriel.assistentevirtual"
+).strip()
+SUPORTE_TELEGRAM = os.getenv("SUPORTE_TELEGRAM", "").strip()
 
 
 def _tz() -> Any:
@@ -101,6 +173,17 @@ def _tz() -> Any:
 def agora_local() -> datetime:
     return datetime.now(_tz())
 
+
+def hoje_local() -> str:
+    """O "dia" do bot.
+
+    Precisa ser o dia LOCAL, não o UTC. Com UTC, os contadores viravam às 21h de
+    Brasília e o relatório das 22h somava só a última hora — era esse o bug do
+    relatório reportado pelo Gabriel.
+    """
+    return agora_local().strftime("%Y-%m-%d")
+
+
 REQUEST_TIMEOUT = 30
 TELEGRAM_RATE_LIMIT_SECONDS = 1.0
 DESCRIPTION_MAX_CHARS = 300
@@ -108,8 +191,90 @@ DESCRIPTION_MAX_CHARS = 300
 Category = Literal["relevant", "borderline", "irrelevant"]
 WorkMode = Literal["remoto", "hibrido", "presencial", "nao_informado"]
 
-# Modalidades que derrubam a vaga: o Gabriel só quer 100% remoto.
+# Modalidades que sempre derrubam a vaga. "nao_informado" entra ou não conforme
+# `require_explicit_remote` — ver `modos_recusados()`.
 REJECTED_WORK_MODES: tuple[WorkMode, ...] = ("presencial", "hibrido")
+
+# As sete famílias de vaga do perfil, mais um escape. O painel liga e desliga
+# cada uma por fonte, então isto precisa ser uma lista FECHADA: se o
+# classificador pudesse inventar categoria, apareceria opção nova no painel a
+# cada semana e o que o Gabriel desligasse não corresponderia a nada.
+# Mudar esta lista exige mudar `CATEGORIAS` em admin/src/lib/config-tipos.ts.
+CATEGORIAS: tuple[str, ...] = (
+    "secretariado",      # Assistente Virtual, Secretária Remota, Assist. Executivo
+    "atendimento",       # Atendimento e suporte ao cliente
+    "comercial",         # SDR, BDR, Closer, Inside Sales
+    "administrativo",    # Auxiliar/Analista Administrativo, Backoffice
+    "financeiro",        # Contas a pagar/receber, cobrança, faturamento
+    "agenda_clinicas",   # Secretária de consultório, agendamento
+    "customer_success",  # CS, pós-venda, relacionamento
+    "outro",             # encaixa no perfil mas não em nenhuma das acima
+)
+
+STATS = DailyStats(STATS_FILE, historico=QUOTA_LOG_FILE)
+FILA = SendQueue(QUEUE_FILE, validade_dias=QUEUE_TTL_DAYS)
+STORE = Store()
+
+
+# ---------------------------------------------------------------------------
+# Configuração efetiva (ambiente + painel)
+# ---------------------------------------------------------------------------
+
+def config_atual() -> dict[str, Any]:
+    """Junta o que veio do ambiente com o que o painel escreveu no banco.
+
+    O painel ganha quando define a chave. Sem banco, sobra só o ambiente — que
+    é o modo como o bot rodou até agora e continua rodando se o Postgres cair.
+    """
+    base: dict[str, Any] = {
+        "daily_limit": DAILY_LIMIT,
+        "window_start": SEND_WINDOW_START,
+        "window_end": SEND_WINDOW_END,
+        "min_score": MIN_SCORE,
+        "reject_english": REJECT_ENGLISH,
+        "reject_senior": REJECT_SENIOR,
+        "require_explicit_remote": REQUIRE_EXPLICIT_REMOTE,
+        "sources": {},
+    }
+    base.update({k: v for k, v in STORE.config().items() if v is not None})
+    return base
+
+
+def regra(cfg: dict[str, Any], fonte: str, chave: str) -> Any:
+    """Valor de uma regra para uma fonte: o específico dela, senão o geral.
+
+    É o que permite ao Gabriel afrouxar uma regra só no ONM sem afrouxar no
+    resto — pedido explícito dele para o painel.
+    """
+    por_fonte = (cfg.get("sources") or {}).get(fonte) or {}
+    if chave in por_fonte and por_fonte[chave] is not None:
+        return por_fonte[chave]
+    return cfg.get(chave)
+
+
+def fonte_ligada(cfg: dict[str, Any], fonte: str) -> bool:
+    por_fonte = (cfg.get("sources") or {}).get(fonte) or {}
+    return bool(por_fonte.get("enabled", True))
+
+
+def modos_recusados(cfg: dict[str, Any], fonte: str) -> tuple[str, ...]:
+    if regra(cfg, fonte, "require_explicit_remote"):
+        return REJECTED_WORK_MODES + ("nao_informado",)
+    return REJECTED_WORK_MODES
+
+
+def categoria_ligada(cfg: dict[str, Any], fonte: str, categoria: str) -> bool:
+    """Esta fonte pode trazer vagas desta família?
+
+    Ausente = ligada. O padrão é permissivo porque o painel só grava o que o
+    Gabriel mexeu: uma categoria nova, criada depois da última vez que ele
+    salvou, precisa nascer funcionando em vez de sumir em silêncio.
+    """
+    por_fonte = (cfg.get("sources") or {}).get(fonte) or {}
+    categorias = por_fonte.get("categorias")
+    if not isinstance(categorias, dict):
+        return True
+    return categorias.get(categoria, True) is not False
 
 
 # ---------------------------------------------------------------------------
@@ -174,23 +339,11 @@ def dedup_key(job: Job) -> str:
     return f"{_normalize(job.title)}|{_normalize(job.company)}"
 
 
-# ---------------------------------------------------------------------------
-# Pré-filtro de remoto (grátis, roda antes do classificador)
-# ---------------------------------------------------------------------------
-
-REMOTE_RE = re.compile(
-    r"home\s*-?\s*office|homeoffice|100\s*%\s*remot|trabalh\w*\s+remot|"
-    r"\bremot[oa]s?\b|remotamente|[àa]\s+dist[âa]ncia|"
-    r"trabalh\w*\s+(?:de|em)\s+casa|work\s+from\s+home|anywhere",
-    re.I,
-)
-
-
 def parece_remoto(job: Job) -> bool:
     """Heurística barata: a fonte diz que é remoto, ou o texto diz."""
     if job.remote_hint == "remoto":
         return True
-    return bool(REMOTE_RE.search(f"{job.title}\n{job.description}"))
+    return filters.texto_menciona_remoto(f"{job.title}\n{job.description}")
 
 
 # ---------------------------------------------------------------------------
@@ -202,8 +355,9 @@ _profile_text: str | None = None
 _profile_mtime: float | None = None
 
 CLASSIFIER_INSTRUCTIONS = """Você lê vagas e projetos de trabalho em português
-brasileiro e faz duas coisas: (A) decide se a vaga interessa ao perfil
-informado logo abaixo destas instruções e (B) extrai os dados da vaga.
+brasileiro e faz três coisas: (A) decide se a vaga interessa ao perfil informado
+logo abaixo destas instruções, (B) extrai os dados da vaga e (C) dá uma nota de
+qualidade à oportunidade.
 
 == (A) CLASSIFICAÇÃO ==
 
@@ -215,8 +369,7 @@ informado logo abaixo destas instruções e (B) extrai os dados da vaga.
   inclusive sem acento.
 - Considere o título, a profissão/área, as skills E a descrição. Às vezes a
   descrição é vaga mas a categoria/skills denuncia que é da área.
-- Se houver QUALQUER dúvida razoável, retorne "borderline" — é melhor o
-  usuário receber uma notificação a mais e ignorar do que perder uma vaga.
+- Se houver QUALQUER dúvida razoável, retorne "borderline".
 - "irrelevant" só para casos claramente fora do perfil.
 - EXCEÇÃO ao viés de "borderline": se o perfil marcar alguma regra como
   OBRIGATÓRIA e a vaga violar essa regra explicitamente, retorne "irrelevant"
@@ -237,16 +390,78 @@ vazia ("") ou "nao_informado" — isso é esperado e correto.
     tipo da vaga nem pela área.
   ATENÇÃO: a plataforma às vezes informa a modalidade e erra. Se o texto da vaga
   contradisser o que a plataforma diz, confie no TEXTO.
+- language: idioma em que o ANÚNCIO está escrito — "pt", "en", "es" ou "outro".
+  É o idioma do texto, não o idioma exigido do candidato. Vaga escrita em
+  português que pede inglês fluente é "pt".
+- requires_english: true só se a vaga EXIGIR inglês (fluente, avançado,
+  conversação, atendimento a cliente estrangeiro). Inglês "desejável" ou
+  "diferencial" é false.
+- seniority: "estagio", "junior", "pleno", "senior" ou "nao_informado".
+  Use "senior" quando o título ou o texto posicionar a vaga como sênior, ou
+  quando exigir 5+ anos de experiência na função. Liderar equipe também conta
+  como "senior". Não confunda com a vaga que apenas *reporta* a alguém sênior.
 - company: nome da empresa/instituição contratante, se aparecer no texto.
   Se só houver o nome de uma pessoa física, ou nada, devolva "".
 - role_type: a função em 2-4 palavras, normalizada (ex.: "Assistente Virtual",
   "SDR", "Assistente Financeiro", "Customer Success"). Se não der pra
   determinar, devolva "".
+- categoria: em qual das famílias abaixo a vaga se encaixa MELHOR. Escolha
+  exatamente uma; na dúvida entre duas, use a que descreve a maior parte do
+  trabalho do dia a dia.
+  - "secretariado" — assistente virtual, secretária remota, assistente
+    executivo, assistente pessoal, apoio direto a uma pessoa ou diretoria.
+  - "atendimento" — atender e dar suporte a cliente (WhatsApp, chat, telefone,
+    e-mail, help desk), recepção remota.
+  - "comercial" — vender ou prospectar: SDR, BDR, closer, inside sales,
+    assistente comercial, prospecção ativa.
+  - "administrativo" — rotinas administrativas, backoffice, cadastro,
+    documentos, processos, apoio operacional interno.
+  - "financeiro" — contas a pagar/receber, cobrança, faturamento, conciliação,
+    apoio à contabilidade.
+  - "agenda_clinicas" — agendamento e secretariado de consultório, clínica ou
+    profissional de saúde; appointment setter.
+  - "customer_success" — CS, pós-venda, onboarding, retenção, relacionamento
+    contínuo com carteira de clientes.
+  - "outro" — encaixa no perfil mas não em nenhuma das famílias acima.
 - summary: resumo da vaga em 1-2 frases curtas (até 250 chars), em português,
   dizendo o que a pessoa vai fazer. Sem enrolação e sem repetir o título.
   Se a descrição for vazia ou inútil, devolva "".
 - salary: remuneração citada NO TEXTO, como está escrita (ex.: "R$ 2.000/mês",
   "R$ 25/hora", "a combinar"). Se o texto não citar valor, devolva "".
+
+== (C) NOTA DE QUALIDADE (score, 0 a 100) ==
+
+Isto é o mais importante depois da classificação. O bot recebe MUITO mais vagas
+aprovadas do que pode publicar: ele publica só um punhado por dia e escolhe pela
+nota. Uma nota que não separa as vagas faz o bot publicar as erradas.
+
+Portanto: **use a faixa inteira e seja severo**. Não concentre tudo entre 70 e
+80. Se metade das vagas receber nota parecida, a nota não serviu para nada.
+
+Comece em 50 e ajuste:
+
+  +25 função exatamente de assistência virtual / secretariado remoto (o núcleo
+      do perfil, o que o aluno procura de verdade)
+  +10 função de atendimento, comercial, administrativo, financeiro ou CS
+  +15 remuneração declarada e boa para o mercado brasileiro de assistente
+      virtual (referência: R$ 1.500 a R$ 3.000/mês em jornada integral)
+  +10 descrição completa e específica: responsabilidades claras, ferramentas
+      citadas, jornada definida
+  +10 empresa identificada e que aparenta estrutura real
+   +5 processo com contato ou candidatura direta
+
+  -15 descrição genérica, curta ou vaga demais para julgar
+  -15 exige 3+ anos de experiência ou formação superior específica
+  -10 exige inglês
+  -10 remuneração declarada baixa (abaixo de R$ 1.200/mês em jornada integral)
+  -20 a classificação foi "borderline" (encaixa no leque, mas não é o alvo)
+
+Referências de calibragem:
+  90+  assistente virtual 100% remota, empresa real, salário declarado e bom
+  70   vaga sólida de atendimento/administrativo remoto, descrição decente
+  50   encaixa na área, mas descrição rasa e sem salário
+  30   borderline com pouca informação
+  10   passou por pouco, quase não vale a vaga do dia
 """
 
 CLASSIFIER_SCHEMA = {
@@ -261,14 +476,23 @@ CLASSIFIER_SCHEMA = {
             "type": "string",
             "enum": ["remoto", "hibrido", "presencial", "nao_informado"],
         },
+        "language": {"type": "string", "enum": ["pt", "en", "es", "outro"]},
+        "requires_english": {"type": "boolean"},
+        "seniority": {
+            "type": "string",
+            "enum": ["estagio", "junior", "pleno", "senior", "nao_informado"],
+        },
+        "categoria": {"type": "string", "enum": list(CATEGORIAS)},
+        "score": {"type": "integer"},
         "company": {"type": "string"},
         "role_type": {"type": "string"},
         "summary": {"type": "string"},
         "salary": {"type": "string"},
     },
     "required": [
-        "category", "reason", "work_mode",
-        "company", "role_type", "summary", "salary",
+        "category", "reason", "work_mode", "language", "requires_english",
+        "seniority", "score", "categoria", "company", "role_type", "summary",
+        "salary",
     ],
 }
 
@@ -354,66 +578,26 @@ def _retry_delay_seconds(exc: Exception, attempt: int) -> float:
 # Telemetria do dia
 # ---------------------------------------------------------------------------
 
-_stats_day: str | None = None
-_stats: dict[str, int] = {}
-_stats_por_fonte: dict[str, dict[str, int]] = {}
-_daily_quota_announced = False
-
-
-def _hoje() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%d")
-
-
-def _reset_stats(today: str) -> None:
-    global _stats_day, _stats, _stats_por_fonte, _daily_quota_announced
-    _stats_day = today
-    _stats = {
-        "classified": 0, "rate_limited": 0, "unfiltered": 0,
-        "prefiltered": 0, "deduped": 0, "sent": 0, "skipped": 0,
-    }
-    _stats_por_fonte = {}
-    _daily_quota_announced = False
-
-
-def _rollover_se_preciso() -> None:
-    global _stats_day
-    today = _hoje()
-    if _stats_day != today:
-        if _stats_day is not None:
-            _persist_stats(_stats_day)
-        _reset_stats(today)
-
-
 def _bump(key: str, fonte: str | None = None) -> None:
-    _rollover_se_preciso()
-    _stats[key] = _stats.get(key, 0) + 1
-    if fonte:
-        por_fonte = _stats_por_fonte.setdefault(fonte, {})
-        por_fonte[key] = por_fonte.get(key, 0) + 1
-
-
-def _persist_stats(day: str) -> None:
-    """Grava o resumo do dia em quota_log.jsonl para revisão posterior."""
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    entry = {"day": day, "model": GEMINI_MODEL, **_stats, "por_fonte": _stats_por_fonte}
-    try:
-        with QUOTA_LOG_FILE.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
-    except OSError as exc:
-        log.error("Failed to write quota log: %s", exc)
+    STATS.bump(hoje_local(), key, fonte)
 
 
 def log_filter_stats() -> None:
     """Loga o placar do dia. Chamado ao fim de cada ciclo."""
-    if not _stats:
+    totais = STATS.totais()
+    if not totais:
         return
-    unfiltered = _stats.get("unfiltered", 0)
+    unfiltered = totais.get("unfiltered", 0)
     line = (
-        f"FILTRO (hoje {_stats_day}): {_stats.get('classified', 0)} classificadas, "
-        f"{_stats.get('prefiltered', 0)} cortadas no pre-filtro, "
-        f"{_stats.get('deduped', 0)} duplicadas, "
-        f"{_stats.get('sent', 0)} enviadas, "
-        f"{_stats.get('rate_limited', 0)} rate-limits, "
+        f"FILTRO (hoje {STATS.dia}): {totais.get('classified', 0)} classificadas, "
+        f"{totais.get('prefiltered', 0)} cortadas no pre-filtro, "
+        f"{totais.get('ingles', 0)} em ingles, "
+        f"{totais.get('senior', 0)} senior, "
+        f"{totais.get('sem_remoto', 0)} sem remoto declarado, "
+        f"{totais.get('deduped', 0)} duplicadas, "
+        f"{totais.get('queued', 0)} enfileiradas, "
+        f"{totais.get('sent', 0)} publicadas, "
+        f"{totais.get('rate_limited', 0)} rate-limits, "
         f"{unfiltered} vagas notificadas SEM FILTRO"
     )
     if unfiltered:
@@ -428,6 +612,13 @@ def _fallback_analysis(reason: str) -> dict[str, Any]:
         "category": "relevant",
         "reason": reason,
         "work_mode": "nao_informado",
+        "language": "pt",
+        "requires_english": False,
+        "seniority": "nao_informado",
+        "categoria": "outro",
+        # Nota baixa de propósito: sem classificador não dá para afirmar que a
+        # vaga é boa, então ela só sai se não houver nada melhor esperando.
+        "score": 25,
         "company": "",
         "role_type": "",
         "summary": "",
@@ -435,7 +626,7 @@ def _fallback_analysis(reason: str) -> dict[str, Any]:
     }
 
 
-def analyze_job(job: Job) -> dict[str, Any]:
+def analyze_job(job: Job, cfg: dict[str, Any]) -> dict[str, Any]:
     """Classifica e extrai os dados de uma vaga com o Gemini.
 
     Em caso de erro ou falta de config, cai no fallback seguro
@@ -453,8 +644,6 @@ def analyze_job(job: Job) -> dict[str, Any]:
         f"=== PERFIL DO USUÁRIO ===\n{profile}\n\n"
         f"=== VAGA A ANALISAR ===\n{job.to_classifier_text()}"
     )
-
-    global _daily_quota_announced
 
     data: dict[str, Any] | None = None
     for attempt in range(1, GEMINI_MAX_ATTEMPTS + 1):
@@ -477,11 +666,10 @@ def analyze_job(job: Job) -> dict[str, Any]:
 
                 # Cota diária esgotada: retry é inútil, só volta amanhã.
                 if _quota_scope(exc) == "day":
-                    if not _daily_quota_announced:
-                        _daily_quota_announced = True
+                    if STATS.marcar_cota_anunciada():
                         log.error(
                             "COTA DIARIA DO GEMINI ESGOTADA (limite=%s/dia, model=%s). "
-                            "A partir de agora TODAS as vagas vao para o grupo SEM FILTRO "
+                            "A partir de agora TODAS as vagas vao para a fila SEM FILTRO "
                             "ate a cota resetar. Migrar para um modelo pago.",
                             _quota_value(exc), GEMINI_MODEL,
                         )
@@ -517,22 +705,71 @@ def analyze_job(job: Job) -> dict[str, Any]:
         log.warning("Analysis returned invalid work_mode %r for %s", work_mode, job.uid)
         work_mode = "nao_informado"
 
-    # Regra dura do Gabriel: só 100% remoto. Presencial/híbrido cai fora mesmo
-    # que a função encaixe — não confia só no viés do classificador.
-    if work_mode in REJECTED_WORK_MODES and category != "irrelevant":
-        log.info("Job %s dropped by work_mode=%s (was %s)", job.uid, work_mode, category)
-        category = "irrelevant"
-        reason = f"vaga {work_mode} — só entram vagas remotas"
+    language = data.get("language") or "pt"
+    seniority = data.get("seniority") or "nao_informado"
+    requires_english = bool(data.get("requires_english"))
 
-    return {
+    categoria = data.get("categoria") or "outro"
+    if categoria not in CATEGORIAS:
+        log.warning("Categoria inválida %r em %s — usando 'outro'", categoria, job.uid)
+        categoria = "outro"
+
+    try:
+        score = max(0, min(100, int(data.get("score", 50))))
+    except (TypeError, ValueError):
+        score = 50
+
+    analise = {
         "category": category,
         "reason": reason,
         "work_mode": work_mode,
+        "language": language,
+        "requires_english": requires_english,
+        "seniority": seniority,
+        "categoria": categoria,
+        "score": score,
         "company": (data.get("company") or "").strip()[:120],
         "role_type": (data.get("role_type") or "").strip()[:80],
         "summary": (data.get("summary") or "").strip()[:300],
         "salary": (data.get("salary") or "").strip()[:80],
     }
+
+    # As regras duras rodam DEPOIS do classificador e passam por cima da
+    # categoria dele. O modelo é bom lendo a vaga e ruim obedecendo regra
+    # absoluta — então quem lê é ele, quem decide é o código.
+    recusados = modos_recusados(cfg, job.source)
+    if work_mode in recusados and category != "irrelevant":
+        motivo = ("não declara trabalho remoto" if work_mode == "nao_informado"
+                  else f"vaga {work_mode}")
+        log.info("Job %s dropped by work_mode=%s (was %s)", job.uid, work_mode, category)
+        analise["category"] = "irrelevant"
+        analise["reason"] = f"{motivo} — só entram vagas 100% remotas"
+        analise["motivo_corte"] = "sem_remoto"
+        return analise
+
+    if regra(cfg, job.source, "reject_english") and language == "en":
+        log.info("Job %s dropped: anúncio em inglês", job.uid)
+        analise["category"] = "irrelevant"
+        analise["reason"] = "anúncio escrito em inglês"
+        analise["motivo_corte"] = "ingles"
+        return analise
+
+    if regra(cfg, job.source, "reject_senior") and seniority == "senior":
+        log.info("Job %s dropped: vaga sênior", job.uid)
+        analise["category"] = "irrelevant"
+        analise["reason"] = "vaga sênior"
+        analise["motivo_corte"] = "senior"
+        return analise
+
+    if not categoria_ligada(cfg, job.source, categoria):
+        log.info("Job %s dropped: categoria %s desligada em %s",
+                 job.uid, categoria, job.source)
+        analise["category"] = "irrelevant"
+        analise["reason"] = f"categoria '{categoria}' desligada para esta fonte"
+        analise["motivo_corte"] = "categoria"
+        return analise
+
+    return analise
 
 
 def log_skipped_job(job: Job, analysis: dict[str, Any]) -> None:
@@ -546,6 +783,7 @@ def log_skipped_job(job: Job, analysis: dict[str, Any]) -> None:
         "reason": analysis.get("reason", ""),
         "work_mode": analysis.get("work_mode", ""),
         "role_type": analysis.get("role_type", ""),
+        "score": analysis.get("score", 0),
         "url": job.url,
     }
     try:
@@ -555,11 +793,31 @@ def log_skipped_job(job: Job, analysis: dict[str, Any]) -> None:
         log.error("Failed to log skipped job %s: %s", job.uid, exc)
 
 
+def registrar(job: Job, status: str, analysis: dict[str, Any] | None = None) -> None:
+    """Espelha o destino da vaga no Postgres, para o painel. No-op sem banco."""
+    a = analysis or {}
+    STORE.registrar_evento(
+        uid=job.uid, source=job.source, status=status, local_day=hoje_local(),
+        title=job.title, company=a.get("company") or job.company, url=job.url,
+        category=a.get("category", ""), work_mode=a.get("work_mode", ""),
+        role_type=a.get("role_type", ""), salary=a.get("salary") or job.salary,
+        score=int(a.get("score") or 0), language=a.get("language", ""),
+        seniority=a.get("seniority", ""), reason=a.get("reason", ""),
+        published_at=job.published_at, categoria=a.get("categoria", ""),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Telegram
 # ---------------------------------------------------------------------------
 
-def send_telegram(text: str, chat_id: str | int | None = None) -> None:
+def send_telegram(text: str, chat_id: str | int | None = None) -> int | None:
+    """Publica a mensagem. Devolve o `message_id`, que é o que dá o link dela.
+
+    O painel não linka para a vaga na plataforma de origem — linka para a
+    mensagem no grupo. Guardar esse id é o que torna isso possível: sem ele,
+    depois de publicada a mensagem não teria como ser reencontrada.
+    """
     resp = requests.post(
         TELEGRAM_URL,
         json={
@@ -573,15 +831,21 @@ def send_telegram(text: str, chat_id: str | int | None = None) -> None:
     if not resp.ok:
         log.error("Telegram error %s: %s", resp.status_code, resp.text)
         resp.raise_for_status()
+    try:
+        return int(resp.json()["result"]["message_id"])
+    except (ValueError, KeyError, TypeError):
+        # A mensagem foi entregue; só não deu para ler o id. Não é motivo para
+        # tratar o envio como falho e reenviar a vaga.
+        return None
 
 
 def is_transient_send_error(exc: requests.RequestException) -> bool:
     """Diz se vale retentar o envio no próximo ciclo.
 
-    Falha de rede, timeout, 429 e 5xx são passageiros — a vaga fica fora do
-    seen_ids e é reenviada. Um 4xx (fora o 429) é problema da mensagem em si
-    (HTML inválido, chat errado, bot removido do grupo): retentar todo ciclo só
-    repetiria o mesmo erro para sempre e travaria as vagas seguintes.
+    Falha de rede, timeout, 429 e 5xx são passageiros — a vaga volta para a
+    fila. Um 4xx (fora o 429) é problema da mensagem em si (HTML inválido, chat
+    errado, bot removido do grupo): retentar todo ciclo só repetiria o mesmo
+    erro para sempre e travaria as vagas seguintes.
     """
     resp = exc.response
     if resp is None:
@@ -675,33 +939,46 @@ def format_job(job: Job, analysis: dict[str, Any] | None = None,
 # Relatório diário
 # ---------------------------------------------------------------------------
 
-def montar_relatorio(fontes: list[Any], estado: ControlState | None = None,
+def montar_relatorio(fontes: list[Any], cfg: dict[str, Any],
                      titulo: str = "Relatório do dia") -> str:
     """Monta o resumo do dia: o que cada fonte trouxe e o que virou mensagem."""
-    _rollover_se_preciso()
+    hoje = hoje_local()
+    STATS.virar_se_preciso(hoje)
+    totais = STATS.totais()
+    fila = FILA.resumo(hoje)
+
     agora = agora_local()
     linhas = [f"📊 <b>{html.escape(titulo)}</b> — {agora.strftime('%d/%m/%Y')}", ""]
 
-    enviadas = _stats.get("sent", 0)
+    enviadas = totais.get("sent", 0)
+    limite = int(cfg.get("daily_limit") or DAILY_LIMIT)
     if enviadas:
-        linhas.append(f"✅ <b>{enviadas}</b> vaga(s) enviadas ao grupo")
+        linhas.append(f"✅ <b>{enviadas}</b> de {limite} vaga(s) publicadas no grupo")
     else:
-        linhas.append("😴 Nenhuma vaga enviada hoje")
+        linhas.append("😴 Nenhuma vaga publicada hoje")
+
+    if fila["na_fila"]:
+        linhas.append(
+            f"⏳ <b>{fila['na_fila']}</b> vaga(s) aprovadas esperando na fila"
+        )
     linhas.append("")
 
     linhas.append("<b>Por fonte</b>")
     houve_fonte = False
     for f in fontes:
-        por_fonte = _stats_por_fonte.get(f.name, {})
+        por_fonte = STATS.da_fonte(f.name)
         env = por_fonte.get("sent", 0)
+        fil = por_fonte.get("queued", 0)
         desc = por_fonte.get("skipped", 0)
         pre = por_fonte.get("prefiltered", 0)
         dup = por_fonte.get("deduped", 0)
-        if not any((env, desc, pre, dup)):
+        if not any((env, fil, desc, pre, dup)):
             continue
         houve_fonte = True
         label = html.escape(getattr(f, "label", f.name))
-        detalhes = [f"{env} enviada(s)"]
+        detalhes = [f"{env} publicada(s)"]
+        if fil:
+            detalhes.append(f"{fil} aprovada(s)")
         if desc:
             detalhes.append(f"{desc} descartada(s)")
         if pre:
@@ -712,20 +989,32 @@ def montar_relatorio(fontes: list[Any], estado: ControlState | None = None,
     if not houve_fonte:
         linhas.append("<i>nenhuma vaga nova processada hoje</i>")
 
-    pausadas = estado.paused() if estado else set()
-    if pausadas:
-        nomes = ", ".join(
-            html.escape(getattr(f, "label", f.name)) for f in fontes if f.name in pausadas
-        )
-        linhas.extend(["", f"⏸ <b>Pausadas:</b> {nomes}"])
+    # Por que as vagas foram recusadas — as regras novas do Gabriel.
+    cortes = [
+        (totais.get("sem_remoto", 0), "sem remoto declarado"),
+        (totais.get("ingles", 0), "em inglês"),
+        (totais.get("senior", 0), "sênior"),
+        (totais.get("prefiltered", 0), "sem menção a remoto no texto"),
+        (totais.get("deduped", 0), "repetidas"),
+    ]
+    cortes = [(n, rotulo) for n, rotulo in cortes if n]
+    if cortes:
+        linhas.extend(["", "<b>Recusadas</b>"])
+        for n, rotulo in cortes:
+            linhas.append(f"• {n} {rotulo}")
+
+    desligadas = [f for f in fontes if not fonte_ligada(cfg, f.name)]
+    if desligadas:
+        nomes = ", ".join(html.escape(getattr(f, "label", f.name)) for f in desligadas)
+        linhas.extend(["", f"⏸ <b>Desligadas no painel:</b> {nomes}"])
 
     # Saúde do filtro: o número que diz se a cota de IA está aguentando.
-    sem_filtro = _stats.get("unfiltered", 0)
+    sem_filtro = totais.get("unfiltered", 0)
     linhas.extend(["", "<b>Filtro</b>"])
-    linhas.append(f"• {_stats.get('classified', 0)} vaga(s) analisadas pela IA")
+    linhas.append(f"• {totais.get('classified', 0)} vaga(s) analisadas pela IA")
     if sem_filtro:
         linhas.append(
-            f"• ⚠️ <b>{sem_filtro} enviada(s) SEM FILTRO</b> — a cota de IA não "
+            f"• ⚠️ <b>{sem_filtro} passaram SEM FILTRO</b> — a cota de IA não "
             f"aguentou o volume"
         )
     else:
@@ -734,17 +1023,15 @@ def montar_relatorio(fontes: list[Any], estado: ControlState | None = None,
     return "\n".join(linhas)
 
 
-def enviar_relatorio(fontes: list[Any], estado: ControlState | None,
+def enviar_relatorio(fontes: list[Any], cfg: dict[str, Any],
                      titulo: str = "Relatório do dia") -> None:
-    texto = montar_relatorio(fontes, estado, titulo)
+    texto = montar_relatorio(fontes, cfg, titulo)
 
-    # No privado o relatório é ferramenta de trabalho do Gustavo/Gabriel; no
-    # grupo é conteúdo para os alunos. Configurável porque a escolha é do dono.
     destinos: list[str | int]
     if REPORT_TO in ("privado", "private", "dm"):
-        destinos = sorted(ADMIN_IDS)
+        destinos = list(REPORT_CHAT_IDS)
         if not destinos:
-            log.warning("REPORT_TO=privado mas TELEGRAM_ADMIN_IDS está vazio — "
+            log.warning("REPORT_TO=privado mas REPORT_CHAT_IDS está vazio — "
                         "mandando pro grupo")
             destinos = [TELEGRAM_CHAT_ID]
     else:
@@ -756,130 +1043,6 @@ def enviar_relatorio(fontes: list[Any], estado: ControlState | None,
             log.info("Relatório enviado para %s.", destino)
         except requests.RequestException as exc:
             log.error("Falha enviando relatório para %s: %s", destino, exc)
-
-
-# ---------------------------------------------------------------------------
-# Comandos do bot
-# ---------------------------------------------------------------------------
-
-AJUDA = """🤖 <b>Comandos do AV Jobs Bot</b>
-
-/status — visão geral: fontes, próxima checagem, números do dia
-/fontes — lista as fontes e o estado de cada uma
-/pausar &lt;fonte&gt; — para de buscar naquela fonte (ou <code>tudo</code>)
-/retomar &lt;fonte&gt; — volta a buscar (ou <code>tudo</code>)
-/relatorio — manda o relatório do dia agora
-/id — mostra seu ID do Telegram (funciona para qualquer pessoa)
-/ajuda — esta mensagem
-
-Exemplos:
-<code>/pausar linkedin</code>
-<code>/retomar tudo</code>
-
-<i>Estes comandos só funcionam aqui no privado — no grupo ficariam à vista de todo mundo.</i>"""
-
-
-def _fmt_duracao(segundos: int) -> str:
-    if segundos <= 0:
-        return "agora"
-    if segundos < 60:
-        return f"{segundos}s"
-    minutos = segundos // 60
-    if minutos < 60:
-        return f"{minutos}min"
-    return f"{minutos // 60}h{minutos % 60:02d}"
-
-
-def build_handlers(fontes: list[Any], estado: ControlState) -> dict[str, Any]:
-    """Cria os handlers dos comandos, fechando sobre as fontes e o estado."""
-    por_nome = {f.name: f for f in fontes}
-
-    def _resolver(args: list[str]) -> tuple[list[Any] | None, str]:
-        """Traduz o argumento do comando em uma lista de fontes."""
-        if not args:
-            return None, ("Faltou dizer a fonte. Use <code>tudo</code> ou uma de: "
-                          + ", ".join(f"<code>{n}</code>" for n in por_nome))
-        alvo = args[0].strip().lower()
-        if alvo in ("tudo", "todas", "all"):
-            return list(fontes), ""
-        if alvo in por_nome:
-            return [por_nome[alvo]], ""
-        return None, (f"Fonte desconhecida: <code>{html.escape(alvo)}</code>. "
-                      "Conhecidas: " + ", ".join(f"<code>{n}</code>" for n in por_nome))
-
-    def ajuda(_args: list[str]) -> str:
-        return AJUDA
-
-    def status(_args: list[str]) -> str:
-        agora_mono = time.monotonic()
-        pausadas = estado.paused()
-        linhas = [f"📡 <b>Status</b> — {agora_local().strftime('%d/%m %H:%M')}", ""]
-        for f in fontes:
-            label = html.escape(getattr(f, "label", f.name))
-            if f.name in pausadas:
-                linhas.append(f"⏸ <b>{label}</b> — pausada")
-                continue
-            prox = _fmt_duracao(f.segundos_para_proxima(agora_mono))
-            ultima = (
-                f.last_fetch_at.astimezone(_tz()).strftime("%H:%M")
-                if f.last_fetch_at else "ainda não rodou"
-            )
-            vagas = f" · {f.last_count} vagas" if f.last_count is not None else ""
-            linhas.append(
-                f"▶️ <b>{label}</b> — última {ultima}{vagas} · próxima em {prox}"
-            )
-        linhas.extend([
-            "",
-            f"Hoje: <b>{_stats.get('sent', 0)}</b> enviadas · "
-            f"{_stats.get('skipped', 0)} descartadas · "
-            f"{_stats.get('classified', 0)} analisadas pela IA",
-        ])
-        if _stats.get("unfiltered", 0):
-            linhas.append(f"⚠️ {_stats['unfiltered']} enviadas SEM FILTRO (cota de IA)")
-        return "\n".join(linhas)
-
-    def listar_fontes(_args: list[str]) -> str:
-        pausadas = estado.paused()
-        linhas = ["🗂 <b>Fontes</b>", ""]
-        for f in fontes:
-            marca = "⏸ pausada" if f.name in pausadas else "▶️ ativa"
-            linhas.append(
-                f"<code>{f.name}</code> — {html.escape(getattr(f, 'label', f.name))} "
-                f"· a cada {f.interval_seconds // 60}min · {marca}"
-            )
-        return "\n".join(linhas)
-
-    def pausar(args: list[str]) -> str:
-        alvos, erro = _resolver(args)
-        if alvos is None:
-            return erro
-        mudou = [f for f in alvos if estado.pause(f.name)]
-        if not mudou:
-            return "Nada mudou — já estava(m) pausada(s)."
-        nomes = ", ".join(html.escape(getattr(f, "label", f.name)) for f in mudou)
-        return f"⏸ Pausado: <b>{nomes}</b>\nNão vou mais buscar vagas aí até você mandar /retomar."
-
-    def retomar(args: list[str]) -> str:
-        alvos, erro = _resolver(args)
-        if alvos is None:
-            return erro
-        mudou = [f for f in alvos if estado.resume(f.name)]
-        if not mudou:
-            return "Nada mudou — já estava(m) ativa(s)."
-        nomes = ", ".join(html.escape(getattr(f, "label", f.name)) for f in mudou)
-        return f"▶️ Retomado: <b>{nomes}</b>"
-
-    def relatorio(_args: list[str]) -> str:
-        return montar_relatorio(fontes, estado, "Relatório parcial")
-
-    return {
-        "ajuda": ajuda, "help": ajuda, "start": ajuda,
-        "status": status,
-        "fontes": listar_fontes,
-        "pausar": pausar, "pause": pausar,
-        "retomar": retomar, "resume": retomar,
-        "relatorio": relatorio, "relatório": relatorio,
-    }
 
 
 # ---------------------------------------------------------------------------
@@ -937,7 +1100,7 @@ def build_sources() -> list[Any]:
     return ativas
 
 
-def coletar(fontes: list[Any], estado: ControlState | None = None) -> tuple[list[Job], set[str]]:
+def coletar(fontes: list[Any], cfg: dict[str, Any]) -> tuple[list[Job], set[str]]:
     """Busca em todas as fontes. Uma que falhe não derruba as outras.
 
     Retorna as vagas e o conjunto de fontes que responderam **sem erro** — uma
@@ -949,8 +1112,8 @@ def coletar(fontes: list[Any], estado: ControlState | None = None) -> tuple[list
     agora = time.monotonic()
 
     for fonte in fontes:
-        # Pausada pelo /pausar: nem consulta.
-        if estado is not None and estado.is_paused(fonte.name):
+        # Desligada no painel: nem consulta.
+        if not fonte_ligada(cfg, fonte.name):
             continue
         if not fonte.is_due(agora):
             continue
@@ -976,15 +1139,67 @@ def coletar(fontes: list[Any], estado: ControlState | None = None) -> tuple[list
 
 
 # ---------------------------------------------------------------------------
+# Despacho: tira da fila e publica
+# ---------------------------------------------------------------------------
+
+def despachar(cfg: dict[str, Any]) -> None:
+    """Publica no máximo uma vaga por tick, se for hora e houver cota.
+
+    Uma por tick basta: o laço roda a cada `CHECK_INTERVAL` e o espaçamento
+    calculado pela fila costuma ser de horas.
+    """
+    agora = agora_local()
+    hoje = hoje_local()
+
+    item = FILA.proxima(
+        agora=agora,
+        hoje=hoje,
+        limite_diario=int(cfg.get("daily_limit") or DAILY_LIMIT),
+        janela_inicio=int(cfg.get("window_start") if cfg.get("window_start") is not None
+                          else SEND_WINDOW_START),
+        janela_fim=int(cfg.get("window_end") if cfg.get("window_end") is not None
+                       else SEND_WINDOW_END),
+    )
+    if item is None:
+        return
+
+    try:
+        message_id = send_telegram(item["html"])
+    except requests.RequestException as exc:
+        if is_transient_send_error(exc):
+            log.error("Falha publicando %s: %s — volta pra fila", item["uid"], exc)
+            FILA.devolver(item)
+        else:
+            log.error("Falha publicando %s: %s — erro permanente, vaga descartada",
+                      item["uid"], exc)
+            _bump("falhou", item.get("source"))
+        return
+
+    FILA.confirmar_envio(agora, hoje)
+    _bump("sent", item.get("source"))
+    log.info("Publicada %s (nota %s) — %s",
+             item["uid"], item.get("score"), item.get("title", "")[:70])
+
+    STORE.registrar_evento(
+        uid=item["uid"], source=item.get("source", ""), status="sent",
+        local_day=hoje, title=item.get("title", ""),
+        score=int(item.get("score") or 0), category=item.get("category", ""),
+        published_at=item.get("published_at", ""),
+        categoria=item.get("categoria", ""),
+        telegram_message_id=message_id,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Loop principal
 # ---------------------------------------------------------------------------
 
 def check_new_jobs(fontes: list[Any], seen_uids: set[str], seen_keys: set[str],
                    inicializadas: set[str],
-                   estado: ControlState | None = None) -> tuple[set[str], set[str], set[str]]:
+                   cfg: dict[str, Any]) -> tuple[set[str], set[str], set[str]]:
     """Executa um ciclo. Retorna (uids vistos, chaves vistas, fontes inicializadas)."""
     labels = {f.name: getattr(f, "label", f.name) for f in fontes}
-    jobs, fontes_ok = coletar(fontes, estado)
+    jobs, fontes_ok = coletar(fontes, cfg)
     if not fontes_ok:
         # Nenhuma fonte estava no horário dela — situação normal, não é erro.
         log.debug("Nenhuma fonte no horário neste tick.")
@@ -1019,10 +1234,12 @@ def check_new_jobs(fontes: list[Any], seen_uids: set[str], seen_keys: set[str],
 
     log.info("Found %d new job(s).", len(novos))
 
-    # Mais antigo → mais recente, para o grupo receber em ordem cronológica.
+    # Mais antigo → mais recente. A ordem de publicação não depende mais disto
+    # (quem ordena é a nota, na fila), mas mantém o log legível.
     novos.sort(key=lambda j: j.published_at or "")
 
-    retry_uids: set[str] = set()
+    agora = agora_local()
+    min_score = int(cfg.get("min_score") or 0)
 
     for job in novos:
         # 1) mesma vaga em outra fonte (ou já enviada antes)?
@@ -1033,7 +1250,25 @@ def check_new_jobs(fontes: list[Any], seen_uids: set[str], seen_keys: set[str],
             seen_uids.add(job.uid)
             continue
 
-        # 2) pré-filtro de remoto, de graça, antes de gastar classificador
+        # 2) filtros de graça, antes de gastar cota de IA. A ordem é a do custo
+        #    crescente e da certeza decrescente.
+        if regra(cfg, job.source, "reject_english") and \
+                filters.parece_ingles(job.title, job.description):
+            log.info("Job %s cortado: anúncio em inglês (pré-filtro)", job.uid)
+            _bump("ingles", job.source)
+            registrar(job, "ingles")
+            seen_uids.add(job.uid)
+            seen_keys.add(chave)
+            continue
+
+        if regra(cfg, job.source, "reject_senior") and filters.parece_senior(job.title):
+            log.info("Job %s cortado: título sênior (pré-filtro)", job.uid)
+            _bump("senior", job.source)
+            registrar(job, "senior")
+            seen_uids.add(job.uid)
+            seen_keys.add(chave)
+            continue
+
         fonte = next((f for f in fontes if f.name == job.source), None)
         if fonte is not None and getattr(fonte, "prefilter_remote", False):
             if not parece_remoto(job):
@@ -1043,41 +1278,51 @@ def check_new_jobs(fontes: list[Any], seen_uids: set[str], seen_keys: set[str],
                 continue
 
         # 3) classificador
-        analysis = analyze_job(job)
+        analysis = analyze_job(job, cfg)
         category = analysis["category"]
         log.info(
-            "Job %s → %s (%s) — %s",
-            job.uid, category, analysis["work_mode"], analysis["reason"],
+            "Job %s → %s (%s, nota %s) — %s",
+            job.uid, category, analysis["work_mode"], analysis["score"],
+            analysis["reason"],
         )
 
         if category == "irrelevant":
             log_skipped_job(job, analysis)
-            _bump("skipped", job.source)
+            # Corte por regra dura tem contador próprio: é o que responde
+            # "por que o grupo esvaziou?" no relatório.
+            motivo = analysis.get("motivo_corte")
+            _bump(motivo or "skipped", job.source)
+            registrar(job, motivo or "skipped", analysis)
             seen_uids.add(job.uid)
             seen_keys.add(chave)
             continue
 
-        # 4) envio
-        try:
-            send_telegram(format_job(job, analysis, labels.get(job.source, "")))
-            log.info("Notified %s (%s) — %s", job.uid, category, job.title)
-            _bump("sent", job.source)
-        except requests.RequestException as exc:
-            if is_transient_send_error(exc):
-                log.error("Failed to send %s: %s — sera reenviada no proximo ciclo",
-                          job.uid, exc)
-                retry_uids.add(job.uid)
-            else:
-                log.error("Failed to send %s: %s — erro permanente, vaga descartada",
-                          job.uid, exc)
-                seen_uids.add(job.uid)
+        if analysis["score"] < min_score:
+            log.info("Job %s cortado por nota %s < %s", job.uid, analysis["score"], min_score)
+            _bump("skipped", job.source)
+            registrar(job, "skipped", analysis)
+            seen_uids.add(job.uid)
+            seen_keys.add(chave)
             continue
 
+        # 4) aprovada — entra na fila e espera a vez
+        FILA.push(
+            uid=job.uid,
+            source=job.source,
+            title=job.title,
+            html=format_job(job, analysis, labels.get(job.source, "")),
+            score=analysis["score"],
+            category=category,
+            categoria=analysis.get("categoria", ""),
+            published_at=job.published_at,
+            agora=agora,
+        )
+        _bump("queued", job.source)
+        registrar(job, "queued", analysis)
         seen_uids.add(job.uid)
         seen_keys.add(chave)
-        time.sleep(TELEGRAM_RATE_LIMIT_SECONDS)
 
-    seen_uids |= uids_do_ciclo - retry_uids
+    seen_uids |= uids_do_ciclo
     save_seen(seen_uids, seen_keys, inicializadas)
     log_filter_stats()
     return seen_uids, seen_keys, inicializadas
@@ -1105,6 +1350,8 @@ def main() -> None:
             f.name, f.interval_seconds // 60, "sim" if f.prefilter_remote else "nao",
         )
 
+    STORE.migrar()
+
     # Pré-carrega profile e client pra mostrar o status do filtro no startup
     profile = load_profile()
     client = get_genai_client()
@@ -1118,53 +1365,67 @@ def main() -> None:
             reasons.append("GEMINI_API_KEY ausente")
         if profile is None:
             reasons.append(f"{PROFILE_FILE} não encontrado")
-        log.warning("Filter DISABLED — notificando TUDO. Motivo(s): %s", "; ".join(reasons))
+        log.warning("Filter DISABLED — aprovando TUDO. Motivo(s): %s", "; ".join(reasons))
 
-    _reset_stats(_hoje())
+    STATS.virar_se_preciso(hoje_local())
     seen_uids, seen_keys, inicializadas = load_seen()
     pendentes = {f.name for f in fontes} - inicializadas
     if pendentes:
         log.info("Fontes ainda não inicializadas: %s", ", ".join(sorted(pendentes)))
 
-    estado = ControlState(CONTROL_FILE)
+    cfg = config_atual()
+    log.info(
+        "Volume: até %d vaga(s)/dia, publicadas entre %dh e %dh, validade da fila %d dias",
+        int(cfg.get("daily_limit") or DAILY_LIMIT),
+        int(cfg.get("window_start") or SEND_WINDOW_START),
+        int(cfg.get("window_end") or SEND_WINDOW_END),
+        QUEUE_TTL_DAYS,
+    )
+    log.info(
+        "Regras: inglês=%s · sênior=%s · exige remoto declarado=%s",
+        "recusa" if cfg.get("reject_english") else "aceita",
+        "recusa" if cfg.get("reject_senior") else "aceita",
+        "sim" if cfg.get("require_explicit_remote") else "não",
+    )
 
-    # O listener sobe sempre, inclusive sem nenhum admin cadastrado — é o que
-    # faz o /id funcionar no cadastro do primeiro. Nenhum comando com efeito
-    # roda para quem não está em TELEGRAM_ADMIN_IDS.
+    # O listener existe só para responder /start e /suporte a quem abrir o bot.
+    # Não há mais nenhum comando que mexa no funcionamento — ver bot_control.py.
     CommandListener(
         token=TELEGRAM_TOKEN,
-        admin_ids=ADMIN_IDS,
-        state=estado,
-        handlers=build_handlers(fontes, estado),
+        site_url=SITE_URL,
+        instagram_url=INSTAGRAM_URL,
+        suporte_telegram=SUPORTE_TELEGRAM,
     ).start()
-    if ADMIN_IDS:
-        log.info("Admins do bot: %s", ", ".join(str(i) for i in sorted(ADMIN_IDS)))
-    else:
-        log.warning(
-            "TELEGRAM_ADMIN_IDS vazio — nenhum comando com efeito vai funcionar. "
-            "Mande /id no privado do bot e cadastre o número que ele responder."
-        )
 
     log.info("Relatório diário às %dh (%s), destino: %s",
              REPORT_HOUR, TIMEZONE_NAME, REPORT_TO)
 
     while True:
+        cfg = config_atual()
+
         try:
             seen_uids, seen_keys, inicializadas = check_new_jobs(
-                fontes, seen_uids, seen_keys, inicializadas, estado
+                fontes, seen_uids, seen_keys, inicializadas, cfg
             )
         except requests.RequestException as exc:
             log.error("Network error: %s — will retry next cycle", exc)
         except Exception as exc:  # noqa: BLE001
             log.exception("Unexpected error: %s — will retry next cycle", exc)
 
-        # Relatório do dia. O dia é o LOCAL, não o UTC — senão viraria às 21h.
+        # Publica da fila, se for hora.
+        try:
+            despachar(cfg)
+        except Exception as exc:  # noqa: BLE001
+            log.exception("Erro no despacho: %s", exc)
+
+        # Relatório do dia. O dia é o LOCAL, não o UTC — era essa confusão que
+        # fazia o relatório sair com números de uma hora só.
         try:
             agora = agora_local()
-            dia = agora.strftime("%Y-%m-%d")
-            if agora.hour >= REPORT_HOUR and not estado.ja_relatou(dia):
-                enviar_relatorio(fontes, estado)
-                estado.marcar_relatado(dia)
+            dia = hoje_local()
+            if agora.hour >= REPORT_HOUR and STATS.relatorio_pendente(dia):
+                enviar_relatorio(fontes, cfg)
+                STATS.marcar_relatorio_enviado(dia)
         except Exception as exc:  # noqa: BLE001
             log.exception("Erro no relatório diário: %s", exc)
 
