@@ -1,4 +1,31 @@
 services:
+  # O Postgres mora AQUI DENTRO, e não como recurso separado do Coolify, por um
+  # motivo prático: serviços do mesmo compose compartilham rede automaticamente
+  # e se enxergam pelo nome. Um banco criado à parte fica noutra rede e exige
+  # ligar "Connect To Predefined Network" na interface — um passo manual, fácil
+  # de esquecer num redeploy futuro, e que já custou tempo uma vez.
+  postgres:
+    image: postgres:16-alpine
+    container_name: av-jobs-postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-avjobs}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB:-avjobs}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    # Sem porta publicada: só quem está neste compose alcança o banco. Não há
+    # rota da internet até ele, o que é a razão de a senha não ser a única
+    # defesa.
+    expose:
+      - "5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-avjobs} -d ${POSTGRES_DB:-avjobs}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
   av-jobs-bot:
     build:
       # Contexto na raiz para a imagem alcançar `db/schema.sql`, que o bot
@@ -56,6 +83,9 @@ services:
       - DATABASE_URL=${DATABASE_URL:-}
       # DATA_DIR fica fixo no volume — não sobrescrever pelo painel.
       - DATA_DIR=/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
     volumes:
       # Sobrevivem a redeploy: seen_ids.json, skipped_jobs.jsonl, quota_log.jsonl
       # e — novos em 12/08 — daily_stats.json (contadores do dia, que antes
@@ -72,18 +102,26 @@ services:
     container_name: av-jobs-admin
     restart: unless-stopped
     environment:
+      # Variável mágica do Coolify: ele lê o SERVICE_FQDN_* e gera sozinho as
+      # regras do Traefik e o certificado para este serviço do compose. É o
+      # jeito de definir o domínio sem depender de clique na interface.
+      - SERVICE_FQDN_ADMIN_3000
       # Mesmo Postgres do bot: um escreve os eventos, o outro os lê.
       - DATABASE_URL=${DATABASE_URL}
       # Assina o cookie de sessão. Sem isto o painel se recusa a subir — é o
       # que impede alguém de forjar uma sessão de administrador.
       - AUTH_SECRET=${AUTH_SECRET}
+      # Para montar o link `t.me/c/<id>/<mensagem>` de cada vaga publicada.
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
       - NODE_ENV=production
     depends_on:
-      - av-jobs-bot
-    # O Coolify põe o Traefik na frente e cuida do domínio e do certificado;
-    # a porta não precisa ser publicada no host.
+      postgres:
+        condition: service_healthy
+    # O Coolify põe o Traefik na frente e cuida do certificado; a porta não
+    # precisa ser publicada no host.
     expose:
       - "3000"
 
 volumes:
   bot-data:
+  postgres-data:
