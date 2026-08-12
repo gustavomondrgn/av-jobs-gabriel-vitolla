@@ -15,15 +15,21 @@ export function Sidebar({ nome, sair }: { nome: string; sair: () => Promise<void
   const caminho = usePathname();
 
   return (
+    // `sticky top-0` + altura exata da viewport: a barra acompanha a rolagem em
+    // vez de subir junto com a página. Sem isso, numa tela longa como a de
+    // Configurações, o rodapé da barra — tema e sair — some de vista.
     <aside
-      className="hidden md:flex w-[236px] shrink-0 flex-col border-r"
+      className="hidden md:flex w-[236px] shrink-0 flex-col border-r sticky top-0 h-dvh"
       style={{ background: 'var(--superficie)', borderColor: 'var(--borda)' }}
     >
-      <div className="px-5 h-16 flex items-center border-b" style={{ borderColor: 'var(--borda)' }}>
+      <div className="px-5 h-16 flex items-center border-b shrink-0"
+           style={{ borderColor: 'var(--borda)' }}>
         <MarcaCompleta />
       </div>
 
-      <nav className="flex-1 p-3">
+      {/* Só a lista de links rola, se um dia houver itens demais. O rodapé
+          continua ancorado embaixo. */}
+      <nav className="flex-1 min-h-0 overflow-y-auto p-3">
         <ul className="flex flex-col gap-0.5">
           {ITENS.map((item) => {
             const ativo = caminho === item.href
@@ -48,7 +54,7 @@ export function Sidebar({ nome, sair }: { nome: string; sair: () => Promise<void
         </ul>
       </nav>
 
-      <div className="p-3 border-t flex flex-col gap-2" style={{ borderColor: 'var(--borda)' }}>
+      <div className="p-3 border-t flex flex-col gap-2 shrink-0" style={{ borderColor: 'var(--borda)' }}>
         <AlternadorTema />
         <p className="px-3 text-[12px] truncate" style={{ color: 'var(--texto-fraco)' }}>
           {nome}
@@ -73,7 +79,7 @@ export function NavMobile() {
   const caminho = usePathname();
   return (
     <nav
-      className="md:hidden flex gap-1 px-3 py-2 border-b overflow-x-auto"
+      className="md:hidden sticky top-0 z-20 flex items-center gap-1 px-3 py-2 border-b overflow-x-auto"
       style={{ background: 'var(--superficie)', borderColor: 'var(--borda)' }}
     >
       {ITENS.map((item) => {
