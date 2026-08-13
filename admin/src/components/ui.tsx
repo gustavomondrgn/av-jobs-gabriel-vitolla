@@ -6,9 +6,9 @@ export function Cartao({
   titulo?: string; acao?: React.ReactNode; children: React.ReactNode; className?: string;
 }) {
   return (
-    <section className={`cartao p-5 ${className}`}>
+    <section className={`cartao p-4 sm:p-5 ${className}`}>
       {(titulo || acao) && (
-        <header className="flex items-center justify-between gap-4 mb-4">
+        <header className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 mb-4">
           {titulo && <h2 className="text-[13px] font-semibold tracking-tight">{titulo}</h2>}
           {acao}
         </header>
@@ -24,16 +24,18 @@ export function Metrica({
   rotulo: string; valor: string | number; detalhe?: React.ReactNode; destaque?: boolean;
 }) {
   return (
-    <div className="cartao p-5">
+    <div className="cartao p-4 sm:p-5">
       <p className="rotulo">{rotulo}</p>
       <p
-        className="mt-2 text-[30px] font-semibold leading-none tabular tracking-tight"
+        className="mt-2 text-[26px] sm:text-[30px] font-semibold leading-none tabular tracking-tight"
         style={destaque ? { color: 'var(--acento)' } : undefined}
       >
         {valor}
       </p>
       {detalhe && (
-        <p className="mt-2 text-[12.5px]" style={{ color: 'var(--texto-suave)' }}>{detalhe}</p>
+        <p className="mt-2 text-[12.5px] text-pretty" style={{ color: 'var(--texto-suave)' }}>
+          {detalhe}
+        </p>
       )}
     </div>
   );
@@ -98,8 +100,9 @@ export function Nota({ valor }: { valor: number }) {
 /**
  * Bolinha de situação da vaga na plataforma de origem.
  *
- * Verde pulsando = ainda aberta. Vermelha = a plataforma tirou do ar, e a
- * mensagem correspondente já saiu do grupo.
+ * Verde = ainda aberta. Vermelha = a plataforma tirou do ar, e a mensagem
+ * correspondente já saiu do grupo. Uma bolinha lisa, sem pulso nem halo: numa
+ * lista de 25 linhas, efeito em volta do ponto vira ruído — a cor já diz tudo.
  *
  * As quatro fontes são verificáveis, inclusive o Indeed — o site dele tem
  * Cloudflare, mas a API do aplicativo responde por chave de vaga. Por isso não
@@ -107,18 +110,16 @@ export function Nota({ valor }: { valor: number }) {
  */
 export function Bolinha({ fechadaEm }: { fechadaEm: string | null }) {
   const aberta = !fechadaEm;
-  const cor = aberta ? 'var(--positivo)' : 'var(--negativo)';
   const titulo = aberta
     ? 'Vaga ainda aberta na plataforma'
     : 'Vaga encerrada na plataforma — a mensagem foi removida do grupo';
   return (
     <span className="inline-flex items-center" title={titulo} aria-label={titulo}>
       <span
-        className={`inline-block rounded-full ${aberta ? 'bolinha-viva' : ''}`}
+        className="inline-block rounded-full"
         style={{
-          width: 8, height: 8, background: cor,
-          boxShadow: aberta ? undefined
-            : `0 0 0 2.5px color-mix(in srgb, ${cor} 22%, transparent)`,
+          width: 8, height: 8,
+          background: aberta ? 'var(--positivo)' : 'var(--negativo)',
         }}
       />
     </span>

@@ -54,10 +54,11 @@ export default async function Vagas({ searchParams }: { searchParams: Promise<Bu
           {status !== 'todos' && <input type="hidden" name="status" value={status} />}
           {fonte !== 'todas' && <input type="hidden" name="fonte" value={fonte} />}
           <input
-            name="q" defaultValue={q} className="campo flex-1"
+            name="q" defaultValue={q} className="campo flex-1 min-w-0"
+            type="search" enterKeyHint="search" autoComplete="off" spellCheck={false}
             placeholder="Buscar por título ou empresa…" aria-label="Buscar"
           />
-          <button type="submit" className="btn btn-neutro">Buscar</button>
+          <button type="submit" className="btn btn-neutro shrink-0">Buscar</button>
         </form>
 
         <div className="flex flex-wrap gap-1.5">
@@ -67,8 +68,8 @@ export default async function Vagas({ searchParams }: { searchParams: Promise<Bu
           ))}
         </div>
 
-        <div className="flex flex-wrap gap-1.5 pt-1 border-t" style={{ borderColor: 'var(--borda)' }}>
-          <span className="text-[12px] self-center mr-1 pt-1" style={{ color: 'var(--texto-fraco)' }}>
+        <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t" style={{ borderColor: 'var(--borda)' }}>
+          <span className="text-[12px] mr-1" style={{ color: 'var(--texto-fraco)' }}>
             Fonte:
           </span>
           <Pilula href={comFiltro({ fonte: 'todas', p: undefined })} ativo={fonte === 'todas'}>
@@ -86,7 +87,57 @@ export default async function Vagas({ searchParams }: { searchParams: Promise<Bu
           <Vazio titulo="Nenhuma vaga encontrada"
                  texto="Nenhum registro bate com esses filtros. Tente limpar a busca ou escolher outro status." />
         ) : (
-          <div className="overflow-x-auto">
+          <>
+          {/* Celular e tablet: uma ficha por vaga. A tabela de seis colunas só
+              cabe em 720px de conteúdo — e com a barra lateral ocupando 236px,
+              isso só acontece a partir de `lg`. Abaixo disso ela viraria rolagem
+              lateral, e ninguém rola uma tabela de lado para descobrir o motivo
+              de uma recusa. */}
+          <ul className="lg:hidden divide-y" style={{ borderColor: 'var(--borda)' }}>
+            {r.linhas.map((v) => {
+              const link = linkTelegram(v.telegram_message_id);
+              return (
+                <li key={`${v.uid}-${v.status}`} className="p-4">
+                  <div className="flex items-start gap-2">
+                    {v.status === 'sent' && (
+                      <span className="mt-[7px] shrink-0"><Bolinha fechadaEm={v.closed_at} /></span>
+                    )}
+                    {link ? (
+                      <a href={link} target="_blank" rel="noopener noreferrer"
+                         title="Abrir a mensagem no grupo do Telegram"
+                         className="text-[14px] font-medium leading-snug py-2 -my-2"
+                         style={{ color: 'var(--acento)' }}>
+                        {v.title} ↗
+                      </a>
+                    ) : (
+                      <span className="text-[14px] font-medium leading-snug">{v.title}</span>
+                    )}
+                  </div>
+
+                  <p className="text-[12.5px] mt-1" style={{ color: 'var(--texto-fraco)' }}>
+                    {[v.company, v.categoria ? rotuloCategoria(v.categoria) : '', v.salary]
+                      .filter(Boolean).join(' · ') || '—'}
+                  </p>
+
+                  {v.status !== 'sent' && v.reason && (
+                    <p className="text-[12.5px] mt-1.5 italic" style={{ color: 'var(--texto-suave)' }}>
+                      {v.reason}
+                    </p>
+                  )}
+
+                  <div className="mt-2.5 flex flex-wrap items-center gap-x-2.5 gap-y-1.5 text-[12px]"
+                       style={{ color: 'var(--texto-fraco)' }}>
+                    <Selo status={v.status} />
+                    <span>nota <Nota valor={v.score} /></span>
+                    <span>{rotuloFonte(v.source)}</span>
+                    <span className="ml-auto tabular">{v.created_at}</span>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+
+          <div className="hidden lg:block overflow-x-auto">
             <table className="w-full text-left border-collapse min-w-[720px]">
               <thead>
                 <tr className="border-b" style={{ borderColor: 'var(--borda)' }}>
@@ -147,15 +198,16 @@ export default async function Vagas({ searchParams }: { searchParams: Promise<Bu
               </tbody>
             </table>
           </div>
+          </>
         )}
       </div>
 
       {r.paginas > 1 && (
-        <nav className="flex items-center justify-between mt-4 text-[13px]">
+        <nav className="flex flex-wrap items-center justify-between gap-3 mt-4 text-[13px]">
           <span style={{ color: 'var(--texto-suave)' }}>
             {r.total} registro(s) · página {r.pagina} de {r.paginas}
           </span>
-          <div className="flex gap-2">
+          <div className="flex gap-2 ml-auto">
             {r.pagina > 1 && (
               <Link className="btn btn-neutro" href={comFiltro({ p: String(r.pagina - 1) })}>
                 Anterior
@@ -177,9 +229,11 @@ function Pilula({ href, ativo, children }: {
   href: string; ativo: boolean; children: React.ReactNode;
 }) {
   return (
+    // Alvo de 36px para o dedo e 28px para o mouse. A régua é o ponteiro, não a
+    // largura da tela: um tablet de 768px é tela grande e mesmo assim é dedo.
     <Link
       href={href}
-      className="rounded-full px-3 py-1 text-[12.5px] font-medium border transition-colors"
+      className="inline-flex items-center rounded-full px-3 h-9 pointer-fine:h-7 text-[12.5px] font-medium border transition-colors"
       style={{
         background: ativo ? 'var(--acento)' : 'var(--superficie)',
         color: ativo ? '#fff' : 'var(--texto-suave)',

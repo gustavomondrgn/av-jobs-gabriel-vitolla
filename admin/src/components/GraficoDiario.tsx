@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 /**
  * Série diária de publicações, em SVG desenhado à mão.
@@ -9,16 +9,22 @@ import { useState } from 'react';
  * JavaScript para desenhar uma linha. O que ela daria de graça — o tooltip — é
  * o que está implementado abaixo.
  *
- * O alvo do mouse não é a bolinha: é uma faixa vertical invisível que cobre a
- * altura toda do gráfico. Mirar num círculo de 3px é irritante; assim basta
- * passar o mouse na vertical do dia.
+ * **O gráfico é desenhado no tamanho real do contêiner.** Um `viewBox` fixo de
+ * 760px espremido num celular de 360px encolhe tudo pela metade — inclusive o
+ * texto dos eixos, que virava 5px e ninguém lia. Medindo a largura, uma unidade
+ * do SVG é um pixel de verdade e "11px" continua sendo 11px no celular.
+ *
+ * O alvo do ponteiro não é a bolinha: é uma faixa vertical invisível que cobre a
+ * altura toda do gráfico. Mirar num círculo de 3px é irritante com mouse e
+ * impossível com o dedo; assim basta tocar na vertical do dia.
  */
 
 export type PontoDia = { dia: string; publicadas: number; recusadas: number };
 
-const L = 40, R = 12, T = 14, B = 26;
-const W = 760, H = 220;
-const larg = W - L - R, alt = H - T - B;
+// Margens: a da esquerda abre espaço para os números do eixo, a de baixo para
+// as datas. `L` menor no celular porque lá o eixo mostra no máximo dois dígitos.
+const R = 12, T = 14, B = 26;
+const LARGURA_PADRAO = 760;   // usada no servidor, antes de medir
 
 function diaCurto(iso: string) {
   const [, m, d] = iso.split('-');
@@ -34,10 +40,32 @@ function diaPorExtenso(iso: string) {
 
 export function GraficoDiario({ dados }: { dados: PontoDia[] }) {
   const [ativo, setAtivo] = useState<number | null>(null);
+  const caixa = useRef<HTMLDivElement>(null);
+  const [W, setW] = useState(LARGURA_PADRAO);
+
+  // Mede o contêiner e reage a rotação de tela, sidebar sumindo, zoom do
+  // navegador. `ResizeObserver` em vez de `resize` na janela: o que importa é a
+  // largura do cartão, não a da janela.
+  useEffect(() => {
+    const el = caixa.current;
+    if (!el) return;
+    const obs = new ResizeObserver(([entrada]) => {
+      const largura = entrada.contentRect.width;
+      if (largura > 0) setW(Math.round(largura));
+    });
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, []);
 
   if (dados.length === 0) {
     return <p className="text-sm" style={{ color: 'var(--texto-fraco)' }}>Sem dados no período.</p>;
   }
+
+  const estreito = W < 560;
+  const L = estreito ? 26 : 40;
+  const H = estreito ? 190 : 220;
+  const larg = Math.max(1, W - L - R);
+  const alt = H - T - B;
 
   const maxBruto = Math.max(1, ...dados.map((d) => d.publicadas));
   // Arredonda o topo para uma escala legível (2, 5, 10, 20…) em vez de deixar o
@@ -54,21 +82,27 @@ export function GraficoDiario({ dados }: { dados: PontoDia[] }) {
   const area = `${linha} L${x(dados.length - 1).toFixed(1)},${T + alt} L${x(0).toFixed(1)},${T + alt} Z`;
 
   const marcas = Array.from({ length: max / passo + 1 }, (_, i) => i * passo);
-  // Um rótulo a cada ~5 dias: com 30 datas o eixo vira uma mancha.
-  const intervalo = Math.max(1, Math.ceil(dados.length / 7));
+  // Um rótulo a cada ~5 dias no desktop e ~10 no celular: com 30 datas num
+  // aparelho estreito, o eixo vira uma mancha preta.
+  const intervalo = Math.max(1, Math.ceil(dados.length / (estreito ? 4 : 7)));
   const faixa = larg / dados.length;
 
   const p = ativo != null ? dados[ativo] : null;
 
   return (
-    <div className="relative">
+    <div className="relative" ref={caixa}>
       <svg
         viewBox={`0 0 ${W} ${H}`}
-        className="w-full select-none"
-        style={{ height: 'auto', overflow: 'visible' }}
+        width={W}
+        height={H}
+        className="max-w-full select-none"
+        // `height: auto` só importa no primeiro quadro, antes de medir: o SVG
+        // nasce com 760 de largura e encolhe proporcionalmente até a medição
+        // chegar. Depois disso, largura medida = largura real, e não há escala.
+        style={{ height: 'auto', overflow: 'visible', touchAction: 'pan-y' }}
         role="img"
         aria-label="Vagas publicadas por dia nos últimos 30 dias"
-        onMouseLeave={() => setAtivo(null)}
+        onPointerLeave={() => setAtivo(null)}
       >
         {marcas.map((m) => (
           <g key={m}>
@@ -91,7 +125,7 @@ export function GraficoDiario({ dados }: { dados: PontoDia[] }) {
         <path d={linha} fill="none" stroke="var(--acento)" strokeWidth="2.25"
               strokeLinejoin="round" strokeLinecap="round" />
 
-        {/* Linha-guia vertical do ponto sob o mouse. */}
+        {/* Linha-guia vertical do ponto sob o ponteiro. */}
         {ativo != null && (
           <line x1={x(ativo)} x2={x(ativo)} y1={T} y2={T + alt}
                 stroke="var(--acento)" strokeWidth="1" strokeDasharray="3 3"
@@ -104,7 +138,7 @@ export function GraficoDiario({ dados }: { dados: PontoDia[] }) {
             <circle
               key={d.dia}
               cx={x(i)} cy={y(d.publicadas)}
-              r={destacado ? 5 : dados.length > 40 ? 0 : 2.75}
+              r={destacado ? 5 : faixa < 12 ? 0 : 2.75}
               fill={destacado ? 'var(--acento)' : 'var(--superficie)'}
               stroke="var(--acento)"
               strokeWidth={destacado ? 2.5 : 1.75}
@@ -122,13 +156,16 @@ export function GraficoDiario({ dados }: { dados: PontoDia[] }) {
           </text>
         ) : null))}
 
-        {/* Faixas de captura, por último para ficarem por cima de tudo. */}
+        {/* Faixas de captura, por último para ficarem por cima de tudo.
+            `onPointerDown` além do `enter` porque no celular não existe hover:
+            o dedo precisa de um toque para escolher o dia. */}
         {dados.map((d, i) => (
           <rect
             key={`alvo-${d.dia}`}
             x={x(i) - faixa / 2} y={T} width={faixa} height={alt}
             fill="transparent"
-            onMouseEnter={() => setAtivo(i)}
+            onPointerEnter={() => setAtivo(i)}
+            onPointerDown={() => setAtivo(i)}
             style={{ cursor: 'crosshair' }}
           />
         ))}

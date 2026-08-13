@@ -24,13 +24,13 @@ export default function Login({
   const [estado, acao] = useActionState<EstadoLogin, FormData>(entrar, {});
 
   return (
-    <main className="min-h-dvh flex items-center justify-center p-6">
+    <main className="min-h-dvh flex items-center justify-center p-4 sm:p-6">
       <div className="w-full max-w-[380px]">
         <div className="flex justify-center mb-8">
           <MarcaCompleta tamanho={34} />
         </div>
 
-        <form action={acao} className="cartao p-7">
+        <form action={acao} className="cartao p-5 sm:p-7">
           <h1 className="text-lg font-semibold tracking-tight">Entrar no painel</h1>
           <p className="mt-1 text-[13px]" style={{ color: 'var(--texto-suave)' }}>
             Acesso restrito ao controle do robô de vagas.

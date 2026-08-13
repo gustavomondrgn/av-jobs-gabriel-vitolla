@@ -250,10 +250,17 @@ function BarraSalvar({ estado }: { estado: EstadoConfig }) {
   const { pending } = useFormStatus();
   return (
     <div
-      className="fixed bottom-0 left-0 right-0 md:left-[236px] border-t px-5 md:px-8 py-3 flex items-center justify-between gap-4 z-10"
-      style={{ background: 'var(--superficie)', borderColor: 'var(--borda)' }}
+      className="fixed bottom-0 left-0 right-0 md:left-[236px] border-t px-4 sm:px-5 md:px-8 py-3 flex items-center justify-between gap-3 z-10"
+      style={{
+        background: 'var(--superficie)',
+        borderColor: 'var(--borda)',
+        // Sem isto, no iPhone a barra fica embaixo do risco do gesto de início.
+        paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))',
+      }}
     >
-      <p className="text-[12.5px] min-w-0" style={{ color: 'var(--texto-suave)' }}>
+      {/* `aria-live`: quem usa leitor de tela precisa ouvir que salvou —
+          a confirmação aparece longe de onde o foco está. */}
+      <p className="text-[12.5px] min-w-0" aria-live="polite" style={{ color: 'var(--texto-suave)' }}>
         {estado.erro ? (
           <span style={{ color: 'var(--negativo)' }}>{estado.erro}</span>
         ) : estado.ok ? (
@@ -261,11 +268,14 @@ function BarraSalvar({ estado }: { estado: EstadoConfig }) {
             Salvo às {estado.quando}. O robô aplica em até 1 minuto.
           </span>
         ) : (
-          'As mudanças valem sem reiniciar o robô.'
+          <>
+            <span className="hidden sm:inline">As mudanças valem sem reiniciar o robô.</span>
+            <span className="sm:hidden">Vale sem reiniciar o robô.</span>
+          </>
         )}
       </p>
       <button type="submit" className="btn btn-primario shrink-0" disabled={pending}>
-        {pending ? 'Salvando…' : 'Salvar alterações'}
+        {pending ? 'Salvando…' : <><span className="hidden sm:inline">Salvar alterações</span><span className="sm:hidden">Salvar</span></>}
       </button>
     </div>
   );

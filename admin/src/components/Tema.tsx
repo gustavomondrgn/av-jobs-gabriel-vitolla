@@ -86,7 +86,10 @@ export function AlternadorTema() {
             title={titulo}
             aria-label={titulo}
             aria-pressed={ativo}
-            className="flex-1 flex items-center justify-center rounded-md py-1.5 transition-colors"
+            // `min-w-10 h-9` para o dedo, `pointer-fine:` devolvendo o botão
+            // compacto para quem usa mouse. A auditoria pegou este: espremido
+            // na barra do celular, cada botão ficava com 15px de largura.
+            className="flex-1 flex items-center justify-center rounded-md min-w-10 h-9 pointer-fine:min-w-0 pointer-fine:h-7 transition-colors"
             style={{
               background: ativo ? 'var(--superficie)' : 'transparent',
               color: ativo ? 'var(--acento)' : 'var(--texto-fraco)',

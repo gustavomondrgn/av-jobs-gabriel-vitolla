@@ -11,8 +11,10 @@ export default async function LayoutPainel({ children }: { children: React.React
     <div className="flex min-h-dvh">
       <Sidebar nome={sessao?.nome ?? ''} sair={sair} />
       <div className="flex-1 min-w-0 flex flex-col">
-        <NavMobile />
-        <main className="flex-1 p-5 md:p-8 max-w-[1180px] w-full mx-auto">{children}</main>
+        <NavMobile nome={sessao?.nome ?? ''} sair={sair} />
+        <main className="flex-1 p-4 sm:p-5 md:p-8 max-w-[1180px] w-full mx-auto">
+          {children}
+        </main>
       </div>
     </div>
   );

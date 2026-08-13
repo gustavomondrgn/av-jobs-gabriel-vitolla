@@ -39,7 +39,9 @@ export default async function VisaoGeral() {
     <>
       <Cabecalho cfg={cfg} />
 
-      <div className="grid gap-4 mt-6 sm:grid-cols-2 lg:grid-cols-4">
+      {/* Duas colunas já no celular: quatro cartões empilhados dariam uma tela
+          inteira de rolagem antes do primeiro gráfico. */}
+      <div className="grid gap-3 mt-5 grid-cols-2 sm:gap-4 sm:mt-6 lg:grid-cols-4">
         <Metrica
           rotulo="Publicadas hoje"
           valor={`${k.publicadasHoje} / ${cfg.daily_limit}`}
@@ -66,8 +68,8 @@ export default async function VisaoGeral() {
       </div>
 
       {/* Barra de cota do dia: o número que responde "por que o grupo parou?" */}
-      <div className="cartao mt-4 p-5">
-        <div className="flex items-baseline justify-between gap-4 mb-3">
+      <div className="cartao mt-4 p-4 sm:p-5">
+        <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 mb-3">
           <h2 className="text-[13px] font-semibold tracking-tight">Cota de hoje</h2>
           <span className="text-[12.5px]" style={{ color: 'var(--texto-suave)' }}>
             publicando entre {cfg.window_start}h e {cfg.window_end}h
@@ -118,7 +120,9 @@ export default async function VisaoGeral() {
         <Cartao
           titulo="Últimas publicadas"
           acao={
-            <Link href="/vagas" className="text-[12.5px] font-medium" style={{ color: 'var(--acento)' }}>
+            <Link href="/vagas"
+                  className="text-[12.5px] font-medium pointer-coarse:py-2 pointer-coarse:-my-2"
+                  style={{ color: 'var(--acento)' }}>
               Ver todas →
             </Link>
           }
@@ -130,7 +134,8 @@ export default async function VisaoGeral() {
           ) : (
             <ul className="flex flex-col divide-y" style={{ borderColor: 'var(--borda)' }}>
               {ultimas.linhas.map((v) => (
-                <li key={`${v.uid}-${v.status}`} className="py-2.5 first:pt-0 last:pb-0 flex items-center gap-3">
+                <li key={`${v.uid}-${v.status}`}
+                    className="py-2.5 first:pt-0 last:pb-0 flex items-center gap-2.5 sm:gap-3">
                   <Bolinha fechadaEm={v.closed_at} />
                   <Nota valor={v.score} />
                   <div className="min-w-0 flex-1">
@@ -142,8 +147,11 @@ export default async function VisaoGeral() {
                       {[v.company, rotuloFonte(v.source), v.salary].filter(Boolean).join(' · ')}
                     </p>
                   </div>
+                  {/* No celular, só a data: a hora custaria ~40px do título, que
+                      é a única coluna que interessa numa tela estreita. */}
                   <span className="text-[12px] tabular shrink-0" style={{ color: 'var(--texto-fraco)' }}>
-                    {v.created_at}
+                    <span className="sm:hidden">{v.created_at.split(' ')[0]}</span>
+                    <span className="hidden sm:inline">{v.created_at}</span>
                   </span>
                 </li>
               ))}
@@ -164,10 +172,13 @@ function TituloVaga({ titulo, link }: { titulo: string; link: string | null }) {
     return <span className="block text-[13.5px] font-medium truncate">{titulo}</span>;
   }
   return (
+    // `py-2 -my-2` no toque: a linha de texto tem 20px de altura, e 20px é alvo
+    // pequeno para o dedo. O par padding/margem negativa engorda a área
+    // clicável para 36px sem mover um pixel do layout.
     <a
       href={link} target="_blank" rel="noopener noreferrer"
       title="Abrir a mensagem no grupo do Telegram"
-      className="group flex items-center gap-1.5 text-[13.5px] font-medium min-w-0 hover:underline"
+      className="group flex items-center gap-1.5 text-[13.5px] font-medium min-w-0 hover:underline pointer-coarse:py-2 pointer-coarse:-my-2"
     >
       <span className="truncate">{titulo}</span>
       <IconeTelegram />

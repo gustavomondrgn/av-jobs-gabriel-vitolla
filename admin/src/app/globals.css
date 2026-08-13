@@ -129,6 +129,21 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* Nada no painel deve empurrar a página para os lados. Quando um conteúdo é
+   largo de verdade — a tabela de vagas, por exemplo — quem rola é o contêiner
+   dele, nunca o corpo da página.
+
+   `clip` e não `hidden` de propósito: `hidden` transformaria a raiz num
+   contêiner de rolagem e quebraria o `position: sticky` da barra lateral. */
+html { overflow-x: clip; }
+
+/* Toque: sem o atraso de 300ms do duplo-toque e sem o retângulo cinza do
+   Android por cima do nosso próprio estado de :active. */
+a, button, summary, label, input, select, [role="button"] {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
 /* Números de métrica alinhados em coluna: sem isso a tabela "dança" quando um
    valor passa de 9 para 10. */
 .tabular { font-variant-numeric: tabular-nums; }
@@ -194,17 +209,19 @@ body {
   color: var(--texto-fraco);
 }
 
-/* Pulso da bolinha de "vaga aberta". Discreto de propósito: numa lista de 25
-   linhas, um pisca-pisca forte vira ruído. Some para quem pediu menos animação
-   no sistema. */
-@keyframes pulso-vaga {
-  0%, 100% { box-shadow: 0 0 0 2.5px color-mix(in srgb, var(--positivo) 24%, transparent); }
-  50%      { box-shadow: 0 0 0 5px   color-mix(in srgb, var(--positivo) 0%,  transparent); }
-}
-.bolinha-viva { animation: pulso-vaga 2.4s ease-in-out infinite; }
+/* --- Toque ------------------------------------------------------------------
+   Duas correções que valem só para quem aponta com o dedo (`pointer: coarse`),
+   sem engordar a interface de quem usa mouse:
 
-@media (prefers-reduced-motion: reduce) {
-  .bolinha-viva { animation: none; }
+   1. **Campo com 16px.** Abaixo disso o Safari do iPhone dá zoom sozinho ao
+      focar o campo — e, pior, não volta ao sair. É a causa nº 1 de "o painel
+      ficou torto no celular".
+   2. **Alvo de 44px.** Dedo não é cursor: botão de 36px é o suficiente para
+      errar o toque com o painel na mão, andando.
+--------------------------------------------------------------------------- */
+@media (pointer: coarse) {
+  .campo, .btn { min-height: 2.75rem; }
+  .campo, select.campo { font-size: 1rem; }
 }
 
 /* Foco visível e consistente para quem navega por teclado. */

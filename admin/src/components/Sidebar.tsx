@@ -74,33 +74,63 @@ export function Sidebar({ nome, sair }: { nome: string; sair: () => Promise<void
   );
 }
 
-/** Navegação para telas estreitas — a sidebar some abaixo de md. */
-export function NavMobile() {
+/**
+ * Navegação para telas estreitas — a sidebar some abaixo de `md`.
+ *
+ * Duas linhas em vez de uma: a de cima carrega marca, tema e sair; a de baixo,
+ * os links. Antes tudo dividia a mesma faixa rolável e, num celular de 360px, o
+ * alternador de tema saía de vista junto com os links — e **não havia como sair
+ * do painel pelo celular**, porque o botão só existia na sidebar do desktop.
+ */
+export function NavMobile({ nome, sair }: { nome: string; sair: () => Promise<void> }) {
   const caminho = usePathname();
+
   return (
-    <nav
-      className="md:hidden sticky top-0 z-20 flex items-center gap-1 px-3 py-2 border-b overflow-x-auto"
+    <header
+      className="md:hidden sticky top-0 z-20 border-b"
       style={{ background: 'var(--superficie)', borderColor: 'var(--borda)' }}
     >
-      {ITENS.map((item) => {
-        const ativo = caminho === item.href
-          || (item.href !== '/' && caminho.startsWith(item.href));
-        return (
-          <Link
-            key={item.href}
-            href={item.href}
-            className="rounded-lg px-3 py-1.5 text-[13px] font-medium whitespace-nowrap"
-            style={{
-              background: ativo ? 'var(--acento-suave)' : 'transparent',
-              color: ativo ? 'var(--acento)' : 'var(--texto-suave)',
-            }}
-          >
-            {item.rotulo}
-          </Link>
-        );
-      })}
-      <div className="ml-auto shrink-0"><AlternadorTema /></div>
-    </nav>
+      <div className="flex items-center gap-2 px-3 h-14">
+        <MarcaCompleta tamanho={26} />
+        <div className="ml-auto flex items-center gap-1.5 shrink-0">
+          <AlternadorTema />
+          <form action={sair} className="flex">
+            <button
+              type="submit"
+              title={nome ? `Sair da conta de ${nome}` : 'Sair'}
+              aria-label={nome ? `Sair da conta de ${nome}` : 'Sair'}
+              className="flex items-center justify-center w-11 h-11 -mr-1.5 rounded-lg"
+              style={{ color: 'var(--texto-suave)' }}
+            >
+              <IconeSair />
+            </button>
+          </form>
+        </div>
+      </div>
+
+      {/* Rola na horizontal se um dia houver links demais; hoje cabem os três. */}
+      <nav className="flex items-center gap-1 px-3 pb-2 overflow-x-auto">
+        {ITENS.map((item) => {
+          const ativo = caminho === item.href
+            || (item.href !== '/' && caminho.startsWith(item.href));
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              aria-current={ativo ? 'page' : undefined}
+              className="flex items-center gap-2 rounded-lg px-3 h-9 text-[13px] font-medium whitespace-nowrap"
+              style={{
+                background: ativo ? 'var(--acento-suave)' : 'transparent',
+                color: ativo ? 'var(--acento)' : 'var(--texto-suave)',
+              }}
+            >
+              <item.icone />
+              {item.rotulo}
+            </Link>
+          );
+        })}
+      </nav>
+    </header>
   );
 }
 
