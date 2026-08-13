@@ -1036,11 +1036,20 @@ def format_job(job: Job, analysis: dict[str, Any] | None = None,
 
 def montar_relatorio(fontes: list[Any], cfg: dict[str, Any],
                      titulo: str = "Relatório do dia") -> str:
-    """Monta o resumo do dia: o que cada fonte trouxe e o que virou mensagem."""
+    """Monta o resumo do dia: quantas vagas foram ao grupo, e de onde vieram.
+
+    O relatório é do Gabriel, não nosso. Ele pediu explicitamente **só** o que
+    entrega valor pra ele: quantas vagas o grupo recebeu hoje e a quebra dessas
+    vagas por fonte. Nada de recusadas, descartadas, repetidas, cortadas no
+    pré-filtro ou saúde da cota de IA — isso é diagnóstico interno, e no meio do
+    relatório dele só servia pra fazer o número bom parecer pequeno.
+
+    Os contadores continuam todos existindo (`telemetry.py`) e continuam
+    visíveis no painel, que é o lugar certo pra diagnóstico.
+    """
     hoje = hoje_local()
     STATS.virar_se_preciso(hoje)
     totais = STATS.totais()
-    fila = FILA.resumo(hoje)
 
     agora = agora_local()
     linhas = [f"📊 <b>{html.escape(titulo)}</b> — {agora.strftime('%d/%m/%Y')}", ""]
@@ -1051,69 +1060,20 @@ def montar_relatorio(fontes: list[Any], cfg: dict[str, Any],
         linhas.append(f"✅ <b>{enviadas}</b> de {limite} vaga(s) publicadas no grupo")
     else:
         linhas.append("😴 Nenhuma vaga publicada hoje")
-
-    if fila["na_fila"]:
-        linhas.append(
-            f"⏳ <b>{fila['na_fila']}</b> vaga(s) aprovadas esperando na fila"
-        )
     linhas.append("")
 
+    # Só fonte e quantidade publicada. Fonte ligada que não rendeu nada aparece
+    # com zero de propósito: "Gupy: 0" responde uma pergunta; a ausência da
+    # linha deixa a dúvida de se a fonte rodou.
     linhas.append("<b>Por fonte</b>")
-    houve_fonte = False
-    for f in fontes:
-        por_fonte = STATS.da_fonte(f.name)
-        env = por_fonte.get("sent", 0)
-        fil = por_fonte.get("queued", 0)
-        desc = por_fonte.get("skipped", 0)
-        pre = por_fonte.get("prefiltered", 0)
-        dup = por_fonte.get("deduped", 0)
-        if not any((env, fil, desc, pre, dup)):
-            continue
-        houve_fonte = True
-        label = html.escape(getattr(f, "label", f.name))
-        detalhes = [f"{env} publicada(s)"]
-        if fil:
-            detalhes.append(f"{fil} aprovada(s)")
-        if desc:
-            detalhes.append(f"{desc} descartada(s)")
-        if pre:
-            detalhes.append(f"{pre} cortada(s) no pré-filtro")
-        if dup:
-            detalhes.append(f"{dup} repetida(s)")
-        linhas.append(f"• <b>{label}</b>: {' · '.join(detalhes)}")
-    if not houve_fonte:
-        linhas.append("<i>nenhuma vaga nova processada hoje</i>")
-
-    # Por que as vagas foram recusadas — as regras novas do Gabriel.
-    cortes = [
-        (totais.get("sem_remoto", 0), "sem remoto declarado"),
-        (totais.get("ingles", 0), "em inglês"),
-        (totais.get("senior", 0), "sênior"),
-        (totais.get("prefiltered", 0), "sem menção a remoto no texto"),
-        (totais.get("deduped", 0), "repetidas"),
-    ]
-    cortes = [(n, rotulo) for n, rotulo in cortes if n]
-    if cortes:
-        linhas.extend(["", "<b>Recusadas</b>"])
-        for n, rotulo in cortes:
-            linhas.append(f"• {n} {rotulo}")
-
-    desligadas = [f for f in fontes if not fonte_ligada(cfg, f.name)]
-    if desligadas:
-        nomes = ", ".join(html.escape(getattr(f, "label", f.name)) for f in desligadas)
-        linhas.extend(["", f"⏸ <b>Desligadas no painel:</b> {nomes}"])
-
-    # Saúde do filtro: o número que diz se a cota de IA está aguentando.
-    sem_filtro = totais.get("unfiltered", 0)
-    linhas.extend(["", "<b>Filtro</b>"])
-    linhas.append(f"• {totais.get('classified', 0)} vaga(s) analisadas pela IA")
-    if sem_filtro:
-        linhas.append(
-            f"• ⚠️ <b>{sem_filtro} passaram SEM FILTRO</b> — a cota de IA não "
-            f"aguentou o volume"
-        )
+    ligadas = [f for f in fontes if fonte_ligada(cfg, f.name)]
+    if ligadas:
+        for f in ligadas:
+            env = STATS.da_fonte(f.name).get("sent", 0)
+            label = html.escape(getattr(f, "label", f.name))
+            linhas.append(f"• <b>{label}</b>: {env} {'vaga' if env == 1 else 'vagas'}")
     else:
-        linhas.append("• Nenhuma vaga passou sem filtro (cota saudável)")
+        linhas.append("<i>nenhuma fonte ligada</i>")
 
     return "\n".join(linhas)
 
