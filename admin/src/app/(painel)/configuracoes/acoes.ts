@@ -50,6 +50,7 @@ export async function salvar(
     window_start: Number(form.get('window_start')),
     window_end: Number(form.get('window_end')),
     min_score: Number(form.get('min_score')),
+    bonus_regime_pj: Number(form.get('bonus_regime_pj')),
     reject_english: marcado(form, 'reject_english'),
     reject_senior: marcado(form, 'reject_senior'),
     require_explicit_remote: marcado(form, 'require_explicit_remote'),

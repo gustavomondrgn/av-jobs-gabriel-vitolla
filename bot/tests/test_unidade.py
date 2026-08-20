@@ -219,6 +219,62 @@ check("lista de categorias do bot ", set(main.CATEGORIAS), esperadas)
 
 print()
 print("=" * 70)
+print("PREFERENCIA POR VAGA NAO-CLT (bonus de regime)")
+print("=" * 70)
+
+# O bonus so vale para quem NAO e CLT. "nao_informado" ficar de fora e o ponto
+# central: e um terco do acervo, e premiar o silencio do anunciante premiaria
+# quase todo mundo.
+cfg_bonus = {"bonus_regime_pj": 100}
+check("nao_clt ganha o bonus      ", main.bonus_regime(cfg_bonus, "nao_clt"), 100)
+check("ambos (CLT ou PJ) ganha    ", main.bonus_regime(cfg_bonus, "ambos"), 100)
+check("clt nao ganha              ", main.bonus_regime(cfg_bonus, "clt"), 0)
+check("nao_informado nao ganha    ", main.bonus_regime(cfg_bonus, "nao_informado"), 0)
+
+# O caminho de volta: zerar no painel desliga a regra inteira.
+check("bonus 0 desliga a regra    ", main.bonus_regime({"bonus_regime_pj": 0}, "nao_clt"), 0)
+check("config ausente nao quebra  ", main.bonus_regime({}, "nao_clt"), 0)
+check("lixo no campo nao quebra   ", main.bonus_regime({"bonus_regime_pj": "abc"}, "nao_clt"), 0)
+check("valor absurdo e limitado   ", main.bonus_regime({"bonus_regime_pj": 9999}, "nao_clt"), 200)
+
+# A lista de regimes precisa bater com a do painel e com a do schema.
+check("regimes conhecidos         ", set(main.REGIMES),
+      {"nao_clt", "clt", "ambos", "nao_informado"})
+
+# Sem classificador nao ha regime, e vaga nao lida nao pode ganhar prioridade.
+check("fallback nao ganha bonus   ",
+      main.bonus_regime(cfg_bonus, main._fallback_analysis("x")["regime"]), 0)
+
+print()
+print("=" * 70)
+print("A FILA ORDENA PELO BONUS, SEM MEXER NA NOTA")
+print("=" * 70)
+
+fila_b = SendQueue(Path(tempfile.mkdtemp()) / "fila.json")
+agora_b = datetime(2026, 8, 20, 9, 0, tzinfo=BRT)
+
+def _push(uid, score, bonus, regime):
+    fila_b.push(uid=uid, source="indeed", title=uid, html="x", score=score,
+                category="relevant", published_at="2026-08-20", agora=agora_b,
+                regime=regime, bonus=bonus)
+
+_push("clt-otima", 95, 0, "clt")
+_push("pj-mediana", 55, 100, "nao_clt")
+_push("clt-boa", 80, 0, "clt")
+
+primeira = fila_b.proxima(agora=agora_b, hoje="2026-08-20", limite_diario=8,
+                          janela_inicio=6, janela_fim=23)
+check("PJ mediana passa na frente ", primeira["uid"], "pj-mediana")
+check("a nota de qualidade nao mudou", primeira["score"], 55)
+check("o bonus fica em campo proprio", primeira["bonus"], 100)
+
+# Item gravado antes deste deploy nao tem o campo `bonus`. A fila em disco
+# sobrevive ao redeploy, entao isso acontece de verdade na primeira subida.
+antigo = {"uid": "velho", "score": 90, "published_at": "2026-08-19"}
+check("item sem bonus vale zero   ", SendQueue._chave_prioridade(antigo), (90, "2026-08-19"))
+
+print()
+print("=" * 70)
 if falhas:
     print(f"FALHARAM {len(falhas)}: {falhas}")
     sys.exit(1)

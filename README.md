@@ -64,6 +64,37 @@ Definido com o Gabriel na reunião de 07/08/2026 e detalhado em [`profile.md`](p
   melhor que a função encaixe. Vaga que não informa a modalidade não é
   descartada por isso — vai no máximo como `borderline`.
 - PJ, freelancer e prestador de serviço são bem-vindos, mas não obrigatórios.
+  Desde 20/08/2026 eles têm **preferência na fila** — ver abaixo.
+
+### Preferência por vaga que não é CLT
+
+O grupo reclamou de excesso de CLT. Antes de mexer, medimos: de 1.049 vagas
+coletadas entre 12 e 20/08, **8% eram não-CLT, 61% CLT e 32% não diziam**. E
+das não-CLT, o filtro julgou 77% irrelevantes para o perfil de assistente
+virtual — o mercado PJ remoto brasileiro é de advogado, dev e editor de vídeo,
+não de secretariado. Sobraram 1,8 vaga por dia que são PJ **e** servem ao
+público do grupo, contra um teto de 8 publicações.
+
+Por isso a escolha foi **preferir**, não cortar. Nada é descartado por ser CLT:
+a vaga não-CLT ganha `BONUS_REGIME_PJ` pontos **só para ordenar a fila**. Com o
+padrão de 100, qualquer PJ passa na frente de qualquer CLT; como a oferta é de
+~2/dia, ela ocupa no máximo duas das oito vagas do dia.
+
+A nota de qualidade em si **não muda** — o bônus fica num campo separado da
+fila. Isso é de propósito: somar o bônus dentro da nota faria "a nota média
+caiu" deixar de distinguir vaga pior de regra nova.
+
+Vaga que **não informa** o regime não ganha bônus. São 32% do acervo, e premiar
+o silêncio do anunciante seria premiar quase todo mundo.
+
+> **Como voltar atrás:** painel → Configurações → **Preferência por PJ** → `0`.
+> Vale no ciclo seguinte, sem redeploy e sem tocar em código. O bot volta a
+> ordenar só por nota, exatamente como antes de 20/08.
+
+O regime de cada vaga fica na coluna `regime` do `job_events` e aparece na
+lista de vagas do painel. Para reconstruir o regime de vagas **anteriores** a
+20/08 — quando o campo não existia — use `scripts/regime_pj.py`, que reabre o
+anúncio na fonte pela URL.
 
 Cada mensagem traz título, empresa/autor, tipo e área da vaga, skills, valores
 (quando houver), descrição resumida e o link para candidatura.
@@ -221,6 +252,7 @@ Para testar imediatamente, defina `CHECK_INTERVAL=30` no `.env`.
 | `PROFILE_FILE` | Caminho do `profile.md` | `profile.md` |
 | `TERMS_FILE` | Caminho do `search_terms.txt` | `search_terms.txt` |
 | `LINKEDIN_TERMS_FILE` | Caminho da lista curta do LinkedIn | `search_terms_linkedin.txt` |
+| `BONUS_REGIME_PJ` | Quanto uma vaga não-CLT ganha na fila. 0 desliga | `100` |
 | `TELEGRAM_ADMIN_IDS` | User IDs que podem mandar comando. Vazio = desligado | — |
 | `TIMEZONE` | Fuso do relatório diário | `America/Sao_Paulo` |
 | `REPORT_HOUR` | Hora do relatório diário | `22` |

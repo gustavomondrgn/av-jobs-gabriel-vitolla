@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { listarVagas, linkTelegram } from '@/lib/metricas';
-import { FONTES, rotuloFonte, rotuloCategoria } from '@/lib/config';
+import { FONTES, rotuloFonte, rotuloCategoria, rotuloRegime } from '@/lib/config';
 import { Selo, Nota, Vazio, Bolinha, ROTULOS_STATUS } from '@/components/ui';
 
 export const dynamic = 'force-dynamic';
@@ -115,7 +115,7 @@ export default async function Vagas({ searchParams }: { searchParams: Promise<Bu
                   </div>
 
                   <p className="text-[12.5px] mt-1" style={{ color: 'var(--texto-fraco)' }}>
-                    {[v.company, v.categoria ? rotuloCategoria(v.categoria) : '', v.salary]
+                    {[v.company, v.categoria ? rotuloCategoria(v.categoria) : '', rotuloRegime(v.regime), v.salary]
                       .filter(Boolean).join(' · ') || '—'}
                   </p>
 
@@ -176,7 +176,7 @@ export default async function Vagas({ searchParams }: { searchParams: Promise<Bu
                         );
                       })()}
                       <p className="text-[12px] mt-0.5" style={{ color: 'var(--texto-fraco)' }}>
-                        {[v.company, v.categoria ? rotuloCategoria(v.categoria) : '', v.salary]
+                        {[v.company, v.categoria ? rotuloCategoria(v.categoria) : '', rotuloRegime(v.regime), v.salary]
                           .filter(Boolean).join(' · ') || '—'}
                       </p>
                       {v.status !== 'sent' && v.reason && (

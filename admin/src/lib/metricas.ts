@@ -131,7 +131,7 @@ export type Vaga = {
   status: string; score: number; work_mode: string; role_type: string;
   salary: string; reason: string; local_day: string; created_at: string;
   categoria: string; telegram_message_id: number | null;
-  closed_at: string | null;
+  closed_at: string | null; regime: string;
 };
 
 /**
@@ -182,7 +182,8 @@ export async function listarVagas(f: FiltroVagas = {}) {
 
   const linhas = await query<Vaga>(`
     SELECT uid, source, title, company, url, status, score, work_mode,
-           role_type, salary, reason, categoria, telegram_message_id, closed_at,
+           role_type, salary, reason, categoria, regime, telegram_message_id,
+           closed_at,
            to_char(local_day, 'DD/MM') AS local_day,
            to_char(created_at AT TIME ZONE 'America/Sao_Paulo', 'DD/MM HH24:MI') AS created_at
     FROM job_events

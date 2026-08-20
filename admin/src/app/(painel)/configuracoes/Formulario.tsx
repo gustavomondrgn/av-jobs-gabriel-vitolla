@@ -43,6 +43,14 @@ export function Formulario({ inicial }: { inicial: ConfigBot }) {
             ajuda="Vaga com nota abaixo disso nem entra na fila. Deixe 0 para aceitar todas as aprovadas."
           />
         </div>
+
+        <div className="mt-4 pt-4 border-t" style={{ borderColor: 'var(--borda)' }}>
+          <Numero
+            nome="bonus_regime_pj" rotulo="Preferência por PJ"
+            padrao={inicial.bonus_regime_pj} min={0} max={200}
+            ajuda="Quanto uma vaga PJ, freelance ou por projeto ganha na disputa pela vaga do dia. Em 100 ela passa na frente de qualquer CLT. Em 0 a preferência fica desligada e vale só a nota — é assim que se volta atrás sem mexer em mais nada. Vaga que não informa o regime nunca ganha esse bônus."
+          />
+        </div>
       </Cartao>
 
       <Cartao titulo="Regras gerais do filtro">

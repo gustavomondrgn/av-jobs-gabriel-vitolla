@@ -69,7 +69,9 @@ JOBS = [
 RESPOSTAS = {
     "Assistente Virtual Home Office": {"score": 92, "role_type": "Assistente Virtual"},
     "Assistente Administrativo":      {"work_mode": "nao_informado"},
-    "Assistente Financeiro Remoto":   {"score": 60},
+    # Nota baixa, mas e PJ: com o bonus de regime ela tem que passar na frente
+    # da de nota 92. E o teste que prova a preferencia ligada de ponta a ponta.
+    "Assistente Financeiro Remoto":   {"score": 60, "regime": "nao_clt"},
     "Secretaria Remota":              {"score": 78},
 }
 
@@ -133,8 +135,10 @@ com_hora(9)          # dentro da janela
 main.despachar(cfg)
 print(f"  09:00 -> publicadas: {len(PUBLICADAS)}  (esperado 1)")
 assert len(PUBLICADAS) == 1
-assert "Assistente Virtual Home Office" in PUBLICADAS[0], "devia sair a de maior nota"
-print("  -> saiu a de nota 92, como esperado")
+assert "Assistente Financeiro Remoto" in PUBLICADAS[0], (
+    "a PJ de nota 60 devia ganhar da CLT de nota 92 pelo bonus de regime")
+assert "PJ / sem vínculo CLT" in PUBLICADAS[0], "a mensagem devia trazer a etiqueta de regime"
+print("  -> saiu a PJ de nota 60 na frente da de 92, e com a etiqueta de regime")
 
 com_hora(9, 10)      # logo depois
 main.despachar(cfg)
@@ -145,8 +149,9 @@ com_hora(16)
 main.despachar(cfg)
 print(f"  16:00 -> publicadas: {len(PUBLICADAS)}  (esperado 2)")
 assert len(PUBLICADAS) == 2
-assert "Secretaria Remota" in PUBLICADAS[1], "devia sair a nota 78"
-print("  -> saiu a de nota 78, na ordem certa")
+assert "Assistente Virtual Home Office" in PUBLICADAS[1], (
+    "sem mais PJ na fila, volta a valer a nota: 92 antes de 78")
+print("  -> esgotada a PJ, a ordem volta a ser por nota")
 
 print()
 print("=" * 72)

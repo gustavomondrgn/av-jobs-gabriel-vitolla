@@ -67,6 +67,12 @@ export type ConfigBot = {
   window_start: number;
   window_end: number;
   min_score: number;
+  /**
+   * Quanto uma vaga PJ/freelance ganha na disputa pela vaga do dia.
+   * `0` desliga a preferência e o bot volta a ordenar só pela nota.
+   * Precisa bater com `BONUS_REGIME_PJ` em `bot/main.py`.
+   */
+  bonus_regime_pj: number;
   reject_english: boolean;
   reject_senior: boolean;
   require_explicit_remote: boolean;
@@ -78,6 +84,7 @@ export const PADRAO: ConfigBot = {
   window_start: 6,
   window_end: 23,
   min_score: 0,
+  bonus_regime_pj: 100,
   reject_english: true,
   reject_senior: true,
   require_explicit_remote: true,
@@ -128,6 +135,11 @@ export function sanear(bruto: Partial<ConfigBot>): ConfigBot {
     window_start: inicio,
     window_end: fim,
     min_score: faixa(bruto.min_score, 0, 100, 0),
+    // Zero é um valor legítimo aqui (desliga a preferência), então o padrão do
+    // `faixa` só vale quando o campo vem ausente ou ilegível — nunca quando
+    // vem 0. `?? PADRAO` antes de chamar é o que garante isso.
+    bonus_regime_pj: faixa(bruto.bonus_regime_pj ?? PADRAO.bonus_regime_pj,
+                           0, 200, PADRAO.bonus_regime_pj),
     reject_english: bruto.reject_english !== false,
     reject_senior: bruto.reject_senior !== false,
     require_explicit_remote: bruto.require_explicit_remote !== false,
@@ -137,4 +149,21 @@ export function sanear(bruto: Partial<ConfigBot>): ConfigBot {
 
 export function rotuloFonte(nome: string): string {
   return FONTES.find((f) => f.nome === nome)?.rotulo ?? nome;
+}
+
+/**
+ * Rótulo do regime de contratação, para a lista de vagas.
+ *
+ * `nao_informado` e vazio devolvem `''` de propósito: vaga que não diz o
+ * regime é a maioria, e escrever "não informado" em quase toda linha encheria
+ * a lista de uma palavra que não distingue nada. Linha sem rótulo já significa
+ * "o anúncio não falou".
+ */
+export function rotuloRegime(regime: string): string {
+  const mapa: Record<string, string> = {
+    nao_clt: 'PJ / sem CLT',
+    clt: 'CLT',
+    ambos: 'CLT ou PJ',
+  };
+  return mapa[regime] ?? '';
 }

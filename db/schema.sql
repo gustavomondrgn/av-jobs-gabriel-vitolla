@@ -35,6 +35,11 @@ ALTER TABLE job_events ADD COLUMN IF NOT EXISTS telegram_message_id BIGINT;
 -- Quando a vaga saiu do ar na plataforma de origem. NULL = ainda aberta (ou
 -- fonte sem como verificar, caso do Indeed).
 ALTER TABLE job_events ADD COLUMN IF NOT EXISTS closed_at TIMESTAMPTZ;
+-- Regime de contratação, extraído pelo classificador desde 20/08/2026:
+-- 'nao_clt', 'clt', 'ambos', 'nao_informado'. Vazio nas linhas anteriores a
+-- essa data — elas foram gravadas quando o campo não existia, e preencher
+-- retroativamente exigiria reabrir cada anúncio (ver scripts/regime_pj.py).
+ALTER TABLE job_events ADD COLUMN IF NOT EXISTS regime TEXT NOT NULL DEFAULT '';
 
 -- O painel quase sempre pergunta "o que aconteceu nos últimos N dias, por
 -- status" — daí o índice composto em vez de um por coluna.

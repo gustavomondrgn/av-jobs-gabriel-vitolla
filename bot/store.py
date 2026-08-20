@@ -134,6 +134,7 @@ class Store:
                          salary: str = "", score: int = 0, language: str = "",
                          seniority: str = "", reason: str = "",
                          published_at: str = "", categoria: str = "",
+                         regime: str = "",
                          telegram_message_id: int | None = None) -> None:
         """Anota o destino de uma vaga. Repetir o mesmo (uid, status) não duplica."""
         self._executar(
@@ -141,12 +142,18 @@ class Store:
             INSERT INTO job_events (
                 uid, source, title, company, url, status, category, work_mode,
                 role_type, salary, score, language, seniority, reason,
-                published_at, local_day, categoria, telegram_message_id
-            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                published_at, local_day, categoria, regime, telegram_message_id
+            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
             ON CONFLICT (uid, status) DO UPDATE SET
                 score = EXCLUDED.score,
                 reason = EXCLUDED.reason,
                 categoria = EXCLUDED.categoria,
+                -- Só sobrescreve o regime se o novo evento souber dizer algo.
+                -- O envio (status='sent') passa por aqui sem reclassificar a
+                -- vaga; deixar o EXCLUDED cru apagaria o regime que a análise
+                -- tinha descoberto no enfileiramento.
+                regime = CASE WHEN EXCLUDED.regime <> '' THEN EXCLUDED.regime
+                              ELSE job_events.regime END,
                 -- COALESCE: um reenvio sem id não pode apagar o id que já
                 -- estava lá e é o que dá o link da mensagem.
                 telegram_message_id = COALESCE(EXCLUDED.telegram_message_id,
@@ -156,7 +163,7 @@ class Store:
             (uid, source, title[:300], company[:200], url[:600], status,
              category, work_mode, role_type[:120], salary[:120], int(score),
              language, seniority, reason[:400], published_at[:60], local_day,
-             categoria, telegram_message_id),
+             categoria, regime[:20], telegram_message_id),
         )
 
     def marcar_encerrada(self, uid: str, quando_iso: str) -> None:

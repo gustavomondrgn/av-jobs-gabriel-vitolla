@@ -86,12 +86,17 @@ class SendQueue:
 
     def push(self, *, uid: str, source: str, title: str, html: str,
              score: int, category: str, published_at: str, agora: datetime,
-             categoria: str = "") -> None:
+             categoria: str = "", regime: str = "", bonus: int = 0) -> None:
         """Coloca uma vaga aprovada na fila.
 
         O HTML já vem renderizado. Renderizar agora e não na hora do envio deixa
         a mensagem coerente com a vaga como ela era quando foi analisada, e evita
         ter que carregar o `Job` inteiro na fila.
+
+        `bonus` é a preferência por regime, guardada SEPARADA da nota. Somar o
+        bônus dentro de `score` faria a nota de qualidade da vaga mudar de
+        significado no meio da série histórica — e aí "a nota média caiu" não
+        distinguiria mais vaga pior de regra nova.
         """
         with self._lock:
             if any(i.get("uid") == uid for i in self._itens):
@@ -102,6 +107,8 @@ class SendQueue:
                 "title": title,
                 "html": html,
                 "score": int(score),
+                "bonus": int(bonus),
+                "regime": regime,
                 "category": category,
                 "categoria": categoria,
                 "published_at": published_at,
@@ -145,8 +152,14 @@ class SendQueue:
 
         Publicação recente ganha do empate porque vaga velha tem mais chance de
         já estar preenchida quando o aluno se candidatar.
+
+        O bônus de regime entra aqui, somado à nota só para efeito de ordem.
+        `.get("bonus", 0)` também é o que faz a fila que já estava gravada em
+        disco continuar funcionando depois do deploy: item antigo não tem o
+        campo e vale zero, em vez de derrubar o despachante com KeyError.
         """
-        return (int(item.get("score") or 0), str(item.get("published_at") or ""))
+        efetiva = int(item.get("score") or 0) + int(item.get("bonus") or 0)
+        return (efetiva, str(item.get("published_at") or ""))
 
     def _virar_o_dia_locked(self, hoje: str) -> None:
         if self._dia != hoje:

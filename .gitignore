@@ -30,3 +30,6 @@ docs/
 
 # Identidade visual: 4,4 MB que o Coolify clonaria a cada deploy sem usar
 brand/
+
+# Cache da analise de regime (descricoes rebuscadas nas fontes, regeneravel)
+scripts/.cache-*.jsonl

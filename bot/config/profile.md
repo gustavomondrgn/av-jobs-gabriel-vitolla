@@ -38,6 +38,13 @@ direito.
 PJ, freelancer, prestador de serviço, part-time e por demanda são modalidades
 bem-vindas — mas **não** são obrigatórias. CLT remoto também serve.
 
+Desde 20/08/2026, a vaga que não é CLT tem **preferência na fila**: quando duas
+disputam a mesma vaga do dia, a PJ sai primeiro. Isso acontece depois que você
+classifica, no código, e não muda nada do seu trabalho: continue devolvendo o
+`regime` que o texto diz, inclusive `nao_informado`, que é o caso mais comum.
+Marcar uma vaga como `nao_clt` sem o texto sustentar isso não "ajuda" ninguém —
+promove uma vaga na frente de outra com base numa informação inventada.
+
 ## ⚠️ REGRA OBRIGATÓRIA 2 — nada em inglês
 
 O **anúncio** precisa estar escrito em português. Vaga com a descrição em inglês

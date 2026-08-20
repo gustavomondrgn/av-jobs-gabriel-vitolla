@@ -165,6 +165,22 @@ SEND_WINDOW_END = int(os.getenv("SEND_WINDOW_END", "23"))
 QUEUE_TTL_DAYS = int(os.getenv("QUEUE_TTL_DAYS", "3"))
 MIN_SCORE = int(os.getenv("MIN_SCORE", "0"))
 
+# --- Preferência por vaga que não é CLT ------------------------------------
+# Quanto a vaga não-CLT ganha na disputa pela vaga do dia. Some-se à nota SÓ
+# para ordenar a fila; a nota de qualidade em si não muda.
+#
+# 100 é o valor pedido pelo Gabriel em 20/08/2026: "é PJ, tem que ganhar de
+# todas". Como o teto da nota é 100, esse valor faz qualquer não-CLT passar na
+# frente de qualquer CLT. O risco de isso encher o grupo de vaga ruim é baixo
+# porque a oferta é pequena: no histórico de 12 a 20/08 havia 1,8 vaga não-CLT
+# por dia dentro do perfil, contra um teto de 8 publicações. `min_score`
+# continua sendo o piso de qualidade e não é afetado pelo bônus.
+#
+# **Zerar este número desliga a preferência por completo** e o bot volta a
+# ordenar só por nota, exatamente como antes de 20/08. É o caminho de volta, e
+# ele está no painel: não precisa de deploy nem de mexer em código.
+BONUS_REGIME_PJ = int(os.getenv("BONUS_REGIME_PJ", "100"))
+
 # --- Vaga encerrada --------------------------------------------------------
 # O que fazer quando a plataforma tira o anúncio do ar: "apagar" some com a
 # mensagem no grupo (padrão, pedido do Gabriel — vaga morta é ruído num feed de
@@ -244,6 +260,17 @@ CATEGORIAS: tuple[str, ...] = (
     "outro",             # encaixa no perfil mas não em nenhuma das acima
 )
 
+# Regime de contratação. Existe para dar preferência ao que não é CLT — pedido
+# do Gabriel em 20/08/2026, depois de o grupo reclamar de excesso de CLT.
+# Medido no histórico de 12 a 20/08: de 1.049 vagas coletadas, 8% eram não-CLT,
+# 61% CLT e 32% não diziam. Por isso "nao_informado" NÃO é tratado como CLT em
+# lugar nenhum: um terço do acervo cairia junto, e a maior parte dele é vaga
+# boa que só não escreveu o regime.
+REGIMES: tuple[str, ...] = ("nao_clt", "clt", "ambos", "nao_informado")
+
+# Quais regimes ganham o bônus de prioridade na fila.
+REGIMES_PREFERIDOS: frozenset[str] = frozenset({"nao_clt", "ambos"})
+
 STATS = DailyStats(STATS_FILE, historico=QUOTA_LOG_FILE)
 FILA = SendQueue(QUEUE_FILE, validade_dias=QUEUE_TTL_DAYS)
 PUBLICADAS = RegistroPublicadas(PUBLICADAS_FILE, dias_de_vida=RECHECK_DIAS)
@@ -265,6 +292,7 @@ def config_atual() -> dict[str, Any]:
         "window_start": SEND_WINDOW_START,
         "window_end": SEND_WINDOW_END,
         "min_score": MIN_SCORE,
+        "bonus_regime_pj": BONUS_REGIME_PJ,
         "reject_english": REJECT_ENGLISH,
         "reject_senior": REJECT_SENIOR,
         "require_explicit_remote": REQUIRE_EXPLICIT_REMOTE,
@@ -286,6 +314,21 @@ def regra(cfg: dict[str, Any], fonte: str, chave: str) -> Any:
     if chave in por_fonte and por_fonte[chave] is not None:
         return por_fonte[chave]
     return cfg.get(chave)
+
+
+def bonus_regime(cfg: dict[str, Any], regime: str) -> int:
+    """Quanto esta vaga ganha na fila por não ser CLT. Zero desliga a regra.
+
+    Só "nao_clt" e "ambos" ganham. "nao_informado" fica de fora de propósito:
+    é um terço do acervo, e premiar o silêncio do anunciante seria premiar
+    quase todo mundo — o que é o mesmo que não premiar ninguém.
+    """
+    if regime not in REGIMES_PREFERIDOS:
+        return 0
+    try:
+        return max(0, min(200, int(cfg.get("bonus_regime_pj") or 0)))
+    except (TypeError, ValueError):
+        return 0
 
 
 def fonte_ligada(cfg: dict[str, Any], fonte: str) -> bool:
@@ -464,6 +507,31 @@ vazia ("") ou "nao_informado" — isso é esperado e correto.
   Se a descrição for vazia ou inútil, devolva "".
 - salary: remuneração citada NO TEXTO, como está escrita (ex.: "R$ 2.000/mês",
   "R$ 25/hora", "a combinar"). Se o texto não citar valor, devolva "".
+- regime: o trabalho anunciado é vínculo CLT ou não é?
+  - "nao_clt" — não é vínculo celetista. Vale tanto quando o anúncio nomeia o
+    regime (PJ, pessoa jurídica, MEI, prestação de serviço, contrato de
+    prestação, emissão de nota fiscal para receber, autônomo, cooperado)
+    quanto quando a NATUREZA do trabalho já exclui CLT: freelance, trabalho
+    por projeto, serviço pontual, por demanda, diária, sem vínculo
+    empregatício.
+  - "clt" — diz CLT, carteira assinada, registro em carteira, celetista,
+    efetivação, OU oferece benefício que só existe em vínculo celetista
+    (vale-transporte, vale-refeição/alimentação, FGTS, 13º, férias remuneradas).
+  - "ambos" — oferece as duas ("CLT ou PJ", "a combinar entre CLT e PJ").
+  - "nao_informado" — o anúncio não diz nem sugere nada sobre isso.
+  ARMADILHAS que NÃO são regime, e que você deve ignorar:
+  - "PJ" como tipo de CLIENTE: "carteira PJ", "clientes PJ", "crédito PJ",
+    "atendimento a PJ e PF". Aqui PJ é o público atendido, não o contrato.
+  - "pessoa jurídica" na descrição do produto ou do público do anunciante.
+  - "atuar de forma autônoma", "perfil autônomo", "com autonomia" — isso é
+    trabalhar sem supervisão, não ser profissional autônomo.
+  - "empresa prestadora de serviços" descrevendo o próprio anunciante.
+  - "emitir notas fiscais" quando é TAREFA do cargo (assistente financeiro,
+    fiscal, administrativo). Só conta se a nota for a forma de receber.
+  - "gestão de freelancers" quando é responsabilidade do cargo.
+  Ser remoto NÃO torna a vaga PJ. Empresa grande não a torna CLT. Na dúvida
+  entre "clt" e "nao_clt", responda "nao_informado": um terço dos anúncios não
+  fala do assunto, e isso é uma resposta correta, não uma falha.
 
 == (C) NOTA DE QUALIDADE (score, 0 a 100) ==
 
@@ -524,11 +592,12 @@ CLASSIFIER_SCHEMA = {
         "role_type": {"type": "string"},
         "summary": {"type": "string"},
         "salary": {"type": "string"},
+        "regime": {"type": "string", "enum": list(REGIMES)},
     },
     "required": [
         "category", "reason", "work_mode", "language", "requires_english",
         "seniority", "score", "categoria", "company", "role_type", "summary",
-        "salary",
+        "salary", "regime",
     ],
 }
 
@@ -652,6 +721,10 @@ def _fallback_analysis(reason: str) -> dict[str, Any]:
         "requires_english": False,
         "seniority": "nao_informado",
         "categoria": "outro",
+        # Sem classificador não há como saber o regime, e chutar "nao_clt" aqui
+        # daria bônus de prioridade a uma vaga que ninguém leu — o filtro fora
+        # do ar viraria promoção automática. "nao_informado" não ganha bônus.
+        "regime": "nao_informado",
         # Nota baixa de propósito: sem classificador não dá para afirmar que a
         # vaga é boa, então ela só sai se não houver nada melhor esperando.
         "score": 25,
@@ -750,6 +823,11 @@ def analyze_job(job: Job, cfg: dict[str, Any]) -> dict[str, Any]:
         log.warning("Categoria inválida %r em %s — usando 'outro'", categoria, job.uid)
         categoria = "outro"
 
+    regime = data.get("regime") or "nao_informado"
+    if regime not in REGIMES:
+        log.warning("Regime inválido %r em %s — usando 'nao_informado'", regime, job.uid)
+        regime = "nao_informado"
+
     try:
         score = max(0, min(100, int(data.get("score", 50))))
     except (TypeError, ValueError):
@@ -763,6 +841,7 @@ def analyze_job(job: Job, cfg: dict[str, Any]) -> dict[str, Any]:
         "requires_english": requires_english,
         "seniority": seniority,
         "categoria": categoria,
+        "regime": regime,
         "score": score,
         "company": (data.get("company") or "").strip()[:120],
         "role_type": (data.get("role_type") or "").strip()[:80],
@@ -840,6 +919,7 @@ def registrar(job: Job, status: str, analysis: dict[str, Any] | None = None) -> 
         score=int(a.get("score") or 0), language=a.get("language", ""),
         seniority=a.get("seniority", ""), reason=a.get("reason", ""),
         published_at=job.published_at, categoria=a.get("categoria", ""),
+        regime=a.get("regime", ""),
     )
 
 
@@ -966,6 +1046,15 @@ WORK_MODE_LABELS: dict[str, str] = {
     "presencial": "🏠 Presencial",
 }
 
+# Só aparece a linha quando o anúncio DIZ o regime. "nao_informado" fica de
+# fora: escrever "regime não informado" em um terço das mensagens só adiciona
+# ruído a um feed que já é denso, e não ajuda ninguém a decidir se candidata.
+REGIME_LABELS: dict[str, str] = {
+    "nao_clt": "📄 PJ / sem vínculo CLT",
+    "ambos": "📄 CLT ou PJ",
+    "clt": "📄 CLT",
+}
+
 
 def format_job(job: Job, analysis: dict[str, Any] | None = None,
                source_label: str = "") -> str:
@@ -994,6 +1083,8 @@ def format_job(job: Job, analysis: dict[str, Any] | None = None,
 
     work_mode_line = WORK_MODE_LABELS.get(analysis.get("work_mode", "nao_informado"), "")
 
+    regime_line = REGIME_LABELS.get(analysis.get("regime", ""), "")
+
     skills_line = "🔧 " + html.escape(", ".join(job.skills)) if job.skills else ""
 
     # Valores: o que a fonte informa tem prioridade; senão o que o classificador
@@ -1018,7 +1109,8 @@ def format_job(job: Job, analysis: dict[str, Any] | None = None,
     description_html = f"<i>{html.escape(description)}</i>" if description else ""
 
     lines = [type_label, "", f"📌 <b>{title}</b>", "", company_line]
-    for line in (prof_line, work_mode_line, skills_line, budget_line, date_line):
+    for line in (prof_line, work_mode_line, regime_line, skills_line,
+                 budget_line, date_line):
         if line:
             lines.append(line)
     if description_html:
@@ -1240,8 +1332,11 @@ def despachar(cfg: dict[str, Any]) -> None:
         source_id=item["uid"].split(":", 1)[-1], title=item.get("title", ""),
         message_id=message_id, agora=agora, html=item.get("html", ""),
     )
-    log.info("Publicada %s (nota %s) — %s",
-             item["uid"], item.get("score"), item.get("title", "")[:70])
+    bonus = int(item.get("bonus") or 0)
+    log.info("Publicada %s (nota %s%s, regime %s) — %s",
+             item["uid"], item.get("score"),
+             f" +{bonus} de prioridade" if bonus else "",
+             item.get("regime") or "?", item.get("title", "")[:70])
 
     STORE.registrar_evento(
         uid=item["uid"], source=item.get("source", ""), status="sent",
@@ -1249,6 +1344,7 @@ def despachar(cfg: dict[str, Any]) -> None:
         score=int(item.get("score") or 0), category=item.get("category", ""),
         published_at=item.get("published_at", ""),
         categoria=item.get("categoria", ""),
+        regime=item.get("regime", ""),
         telegram_message_id=message_id,
     )
 
@@ -1436,6 +1532,12 @@ def check_new_jobs(fontes: list[Any], seen_uids: set[str], seen_keys: set[str],
             continue
 
         # 4) aprovada — entra na fila e espera a vez
+        regime = analysis.get("regime", "nao_informado")
+        bonus = bonus_regime(cfg, regime)
+        if bonus:
+            log.info("Job %s ganha +%d de prioridade por regime=%s (nota %s → %s)",
+                     job.uid, bonus, regime, analysis["score"],
+                     analysis["score"] + bonus)
         FILA.push(
             uid=job.uid,
             source=job.source,
@@ -1444,6 +1546,8 @@ def check_new_jobs(fontes: list[Any], seen_uids: set[str], seen_keys: set[str],
             score=analysis["score"],
             category=category,
             categoria=analysis.get("categoria", ""),
+            regime=regime,
+            bonus=bonus,
             published_at=job.published_at,
             agora=agora,
         )
